@@ -88,6 +88,7 @@ class ChatController extends ChangeNotifier {
   String? preferredBleDeviceId;
   String? preferredBleDeviceLabel;
   bool geneLlmEnabled = false;
+  bool llmDebugMode = false;
   bool useLocalComputeMode = false;
 
   ChatController({
@@ -188,8 +189,9 @@ class ChatController extends ChangeNotifier {
       preferredBleDeviceLabel =
           decoded["preferred_ble_device_label"]?.toString();
       geneLlmEnabled = (decoded["gene_llm_enabled"] as bool?) ?? false;
-      useLocalComputeMode = (decoded["use_local_compute_mode"] as bool?) ??
-          useLocalComputeMode;
+      llmDebugMode = (decoded["llm_debug_mode"] as bool?) ?? false;
+      useLocalComputeMode =
+          (decoded["use_local_compute_mode"] as bool?) ?? useLocalComputeMode;
       final arr =
           (decoded["messages"] as List?)?.cast<Map<String, dynamic>>() ??
               const [];
@@ -211,6 +213,7 @@ class ChatController extends ChangeNotifier {
         "preferred_ble_device_id": preferredBleDeviceId,
         "preferred_ble_device_label": preferredBleDeviceLabel,
         "gene_llm_enabled": geneLlmEnabled,
+        "llm_debug_mode": llmDebugMode,
         "use_local_compute_mode": useLocalComputeMode,
         "messages": messages.map((m) => m.toJson()).toList(),
       }),
@@ -256,6 +259,16 @@ class ChatController extends ChangeNotifier {
 
   Future<void> toggleGeneLlm() async {
     await setGeneLlmEnabled(!geneLlmEnabled);
+  }
+
+  Future<void> setLlmDebugMode(bool value) async {
+    llmDebugMode = value;
+    notifyListeners();
+    await _save();
+  }
+
+  Future<void> toggleLlmDebugMode() async {
+    await setLlmDebugMode(!llmDebugMode);
   }
 
   Future<void> setUseLocalComputeMode(bool value) async {
@@ -456,7 +469,8 @@ class ChatController extends ChangeNotifier {
     final userId = payload["user_id"]?.toString() ?? "-";
     final query = payload["query"]?.toString() ?? "-";
     final topicText = payload["topic"]?.toString() ?? "-";
-    final snpRaw = payload["SNP_list"] ?? payload["snp_list"] ?? payload["variants"];
+    final snpRaw =
+        payload["SNP_list"] ?? payload["snp_list"] ?? payload["variants"];
     final snpCount = snpRaw is List ? snpRaw.length : 0;
     return "[LOCAL COMPUTE MOCK]\n"
         "user_id: $userId\n"
@@ -469,7 +483,8 @@ class ChatController extends ChangeNotifier {
     required String userQuery,
   }) {
     final raw = localMockPayload;
-    final base = (raw == null) ? <String, dynamic>{} : Map<String, dynamic>.from(raw);
+    final base =
+        (raw == null) ? <String, dynamic>{} : Map<String, dynamic>.from(raw);
     base["query"] = userQuery;
     base["topic"] = _mapTopicForEdge(topic);
     return base;
@@ -530,8 +545,7 @@ class ChatController extends ChangeNotifier {
             if (t != null && t.trim().isNotEmpty) topicText = t.trim();
             if (u != null && u.trim().isNotEmpty) userId = u.trim();
 
-            final snpRaw =
-                responseData["SNP_list"] ??
+            final snpRaw = responseData["SNP_list"] ??
                 responseData["snp_list"] ??
                 responseData["variants"];
 
@@ -541,7 +555,11 @@ class ChatController extends ChangeNotifier {
                   .where((e) => e.trim().isNotEmpty)
                   .toList();
               if (parsed.isNotEmpty) variants = parsed;
-              print("[GeneLLM] extracted variants from response_data: ${parsed.length}");
+              if (llmDebugMode && kDebugMode) {
+                debugPrint(
+                  "[GeneLLM] extracted variants from response_data: ${parsed.length}",
+                );
+              }
             }
 
             yuguard = responseData["yuguard"];
@@ -574,7 +592,8 @@ class ChatController extends ChangeNotifier {
     final userId = payload["user_id"]?.toString().trim();
     final query = payload["query"]?.toString().trim();
     final topicText = payload["topic"]?.toString().trim();
-    final snpRaw = payload["SNP_list"] ?? payload["snp_list"] ?? payload["variants"];
+    final snpRaw =
+        payload["SNP_list"] ?? payload["snp_list"] ?? payload["variants"];
     final variants = (snpRaw is List)
         ? snpRaw
             .map((e) => e?.toString() ?? "")
@@ -604,20 +623,23 @@ class ChatController extends ChangeNotifier {
           userQuery: userQuery,
           edgeResult: edgeResult,
         );
-    print(
-      "[GeneLLM] llm_input topic=${llmInput.topic} variants=${llmInput.variants.length} yuguard=${llmInput.yuguard == null ? "null" : "set"}",
-    );
-    final previewCount =
-        llmInput.variants.length >= 5 ? 5 : llmInput.variants.length;
-    print(
-      "[GeneLLM] variants_preview=${llmInput.variants.take(previewCount).toList()}",
-    );
+    if (llmDebugMode && kDebugMode) {
+      debugPrint(
+        "[GeneLLM] llm_input topic=${llmInput.topic} variants=${llmInput.variants.length} yuguard=${llmInput.yuguard == null ? "null" : "set"}",
+      );
+      final previewCount =
+          llmInput.variants.length >= 5 ? 5 : llmInput.variants.length;
+      debugPrint(
+        "[GeneLLM] variants_preview=${llmInput.variants.take(previewCount).toList()}",
+      );
+    }
     final result = await api.askLlm(
       userId: llmInput.userId,
       aggregatedQuery: llmInput.query,
       topic: llmInput.topic,
       variants: llmInput.variants,
       yuguard: llmInput.yuguard,
+      debugMode: llmDebugMode,
     );
     return _LlmReply(
       answer: result.answer,
@@ -659,6 +681,60 @@ class ChatController extends ChangeNotifier {
         "yuguard: $yuguardState";
   }
 
+  void _upsertDebugMessage({
+    required String typingId,
+    required String content,
+    required String kind,
+    required String fullJson,
+  }) {
+    if (!llmDebugMode) return;
+    final idx = messages.indexWhere((m) => m.id == typingId);
+    final msg = ChatMessage(
+      id: idx == -1 ? _uuid.v4() : typingId,
+      role: Role.assistant,
+      content: content,
+      createdAt: DateTime.now(),
+      isTyping: false,
+      meta: {
+        "kind": kind,
+        "debug": true,
+        "full_json": fullJson,
+      },
+    );
+    if (idx == -1) {
+      messages.add(msg);
+    } else {
+      messages[idx] = msg;
+    }
+  }
+
+  void _appendLlmRequestDebug(Map<String, dynamic>? requestLog) {
+    if (!llmDebugMode || requestLog == null) return;
+    messages.add(
+      ChatMessage(
+        id: _uuid.v4(),
+        role: Role.assistant,
+        content: _buildLlmRequestSummary(requestLog),
+        createdAt: DateTime.now(),
+        meta: {
+          "kind": "llm_request",
+          "debug": true,
+          "full_json": const JsonEncoder.withIndent("  ").convert(requestLog),
+        },
+      ),
+    );
+  }
+
+  String _formatFinalAnswer(_LlmReply reply) {
+    final answer =
+        reply.answer.trim().isEmpty ? "(empty response)" : reply.answer;
+    if (!llmDebugMode) return answer;
+    final sourceTag = reply.jobId == null || reply.jobId!.isEmpty
+        ? "[${reply.source}]"
+        : "[${reply.source} job=${reply.jobId}]";
+    return "$sourceTag $answer";
+  }
+
   bool _isGreeting(String lower) {
     const keywords = [
       "你好",
@@ -674,17 +750,26 @@ class ChatController extends ChangeNotifier {
   }
 
   Future<void> _handleChatOnlyMessage(String query) async {
+    if (!llmDebugMode) return;
     final lower = query.toLowerCase();
-    if (_isGreeting(lower)) {
-      await _appendAssistantMessage(
-        "你好，我是 GeneApp 助理。目前是 ChatOnly 模式，你可以開啟 GeneLLM 使用 edge + LLM 流程。",
-      );
-      return;
-    }
-    await _appendAssistantMessage(
-      "已收到你的訊息：$query\n"
-      "目前是 ChatOnly（不使用 LLM）。若要啟用模型回覆，請開啟 GeneLLM。",
+    final content = _isGreeting(lower)
+        ? "你好，我是 GeneApp 助理。目前是 ChatOnly 模式，你可以開啟 GeneLLM 使用 edge + LLM 流程。"
+        : "已收到你的訊息：$query\n"
+            "目前是 ChatOnly（不使用 LLM）。若要啟用模型回覆，請開啟 GeneLLM。";
+    messages.add(
+      ChatMessage(
+        id: _uuid.v4(),
+        role: Role.assistant,
+        content: content,
+        createdAt: DateTime.now(),
+        meta: {
+          "kind": "chat_only",
+          "debug": true,
+        },
+      ),
     );
+    notifyListeners();
+    await _save();
   }
 
   Future<void> sendUserMessage(String text) async {
@@ -726,49 +811,25 @@ class ChatController extends ChangeNotifier {
           fallbackQuery: trimmed,
           payload: effectivePayload,
         );
-        final idx = messages.indexWhere((m) => m.id == typingId);
-        final rawMsg = _buildMockLocalReplyText(effectivePayload);
-        if (idx != -1) {
-          messages[idx] = ChatMessage(
-            id: typingId,
-            role: Role.assistant,
-            content: rawMsg,
-            createdAt: DateTime.now(),
-            isTyping: false,
-            meta: {
-              "kind": "edge_result",
-              "full_json": const JsonEncoder.withIndent("  ")
-                  .convert(effectivePayload),
-            },
-          );
-        } else {
+        _upsertDebugMessage(
+          typingId: typingId,
+          content: _buildMockLocalReplyText(effectivePayload),
+          kind: "edge_result",
+          fullJson:
+              const JsonEncoder.withIndent("  ").convert(effectivePayload),
+        );
+        if (llmDebugMode) {
+          llmTypingId = _uuid.v4();
           messages.add(
             ChatMessage(
-              id: _uuid.v4(),
+              id: llmTypingId,
               role: Role.assistant,
-              content: rawMsg,
+              content: "…",
               createdAt: DateTime.now(),
-              meta: {
-                "kind": "edge_result",
-                "full_json": const JsonEncoder.withIndent("  ")
-                    .convert(effectivePayload),
-              },
+              isTyping: true,
             ),
           );
         }
-        notifyListeners();
-        await _save();
-
-        llmTypingId = _uuid.v4();
-        messages.add(
-          ChatMessage(
-            id: llmTypingId,
-            role: Role.assistant,
-            content: "…",
-            createdAt: DateTime.now(),
-            isTyping: true,
-          ),
-        );
         notifyListeners();
         await _save();
 
@@ -784,26 +845,8 @@ class ChatController extends ChangeNotifier {
           requestLog: cloudReply.requestLog,
         );
 
-        if (reply.requestLog != null) {
-          messages.add(
-            ChatMessage(
-              id: _uuid.v4(),
-              role: Role.assistant,
-              content: _buildLlmRequestSummary(reply.requestLog!),
-              createdAt: DateTime.now(),
-              meta: {
-                "kind": "llm_request",
-                "full_json": const JsonEncoder.withIndent("  ").convert(
-                  reply.requestLog,
-                ),
-              },
-            ),
-          );
-        }
-
-        final sourceTag = "[${reply.source} from LOCAL_MOCK]";
-        final finalAnswer =
-            "$sourceTag ${reply.answer.trim().isEmpty ? "(empty response)" : reply.answer}";
+        _appendLlmRequestDebug(reply.requestLog);
+        final finalAnswer = _formatFinalAnswer(reply);
         _clearTypingBubbles();
         messages.add(
           ChatMessage(
@@ -826,47 +869,24 @@ class ChatController extends ChangeNotifier {
       }
 
       if (edgeResult != null) {
-        final idx = messages.indexWhere((m) => m.id == typingId);
-        final rawMsg = _buildEdgeReplyText(edgeResult);
-        if (idx != -1) {
-          messages[idx] = ChatMessage(
-            id: typingId,
-            role: Role.assistant,
-            content: rawMsg,
-            createdAt: DateTime.now(),
-            isTyping: false,
-            meta: {
-              "kind": "edge_result",
-              "full_json": _formatEdgeStateFullJson(edgeResult.state),
-            },
-          );
-        } else {
+        _upsertDebugMessage(
+          typingId: typingId,
+          content: _buildEdgeReplyText(edgeResult),
+          kind: "edge_result",
+          fullJson: _formatEdgeStateFullJson(edgeResult.state),
+        );
+        if (llmDebugMode) {
+          llmTypingId = _uuid.v4();
           messages.add(
             ChatMessage(
-              id: _uuid.v4(),
+              id: llmTypingId,
               role: Role.assistant,
-              content: rawMsg,
+              content: "…",
               createdAt: DateTime.now(),
-              meta: {
-                "kind": "edge_result",
-                "full_json": _formatEdgeStateFullJson(edgeResult.state),
-              },
+              isTyping: true,
             ),
           );
         }
-        notifyListeners();
-        await _save();
-
-        llmTypingId = _uuid.v4();
-        messages.add(
-          ChatMessage(
-            id: llmTypingId,
-            role: Role.assistant,
-            content: "…",
-            createdAt: DateTime.now(),
-            isTyping: true,
-          ),
-        );
         notifyListeners();
         await _save();
 
@@ -881,26 +901,8 @@ class ChatController extends ChangeNotifier {
           requestLog: cloudReply.requestLog,
         );
 
-        if (reply.requestLog != null) {
-          messages.add(
-            ChatMessage(
-              id: _uuid.v4(),
-              role: Role.assistant,
-              content: _buildLlmRequestSummary(reply.requestLog!),
-              createdAt: DateTime.now(),
-              meta: {
-                "kind": "llm_request",
-                "full_json": const JsonEncoder.withIndent("  ").convert(
-                  reply.requestLog,
-                ),
-              },
-            ),
-          );
-        }
-
-        final sourceTag = "[${reply.source} from EDGE job=${reply.jobId}]";
-        final finalAnswer =
-            "$sourceTag ${reply.answer.trim().isEmpty ? "(empty response)" : reply.answer}";
+        _appendLlmRequestDebug(reply.requestLog);
+        final finalAnswer = _formatFinalAnswer(reply);
         _clearTypingBubbles();
         messages.add(
           ChatMessage(
@@ -926,28 +928,8 @@ class ChatController extends ChangeNotifier {
         );
       })();
 
-      if (reply.requestLog != null) {
-        messages.add(
-          ChatMessage(
-            id: _uuid.v4(),
-            role: Role.assistant,
-            content: _buildLlmRequestSummary(reply.requestLog!),
-            createdAt: DateTime.now(),
-            meta: {
-              "kind": "llm_request",
-              "full_json": const JsonEncoder.withIndent("  ").convert(
-                reply.requestLog,
-              ),
-            },
-          ),
-        );
-      }
-
-      final sourceTag = reply.jobId == null || reply.jobId!.isEmpty
-          ? "[${reply.source}]"
-          : "[${reply.source} job=${reply.jobId}]";
-      final finalAnswer =
-          "$sourceTag ${reply.answer.trim().isEmpty ? "(empty response)" : reply.answer}";
+      _appendLlmRequestDebug(reply.requestLog);
+      final finalAnswer = _formatFinalAnswer(reply);
       _clearTypingBubbles();
       messages.add(ChatMessage(
         id: _uuid.v4(),

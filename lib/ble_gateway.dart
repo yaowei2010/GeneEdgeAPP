@@ -30,7 +30,7 @@ class BleGateway {
       }
       if (state == BluetoothAdapterState.unauthorized) {
         throw Exception(
-          "Bluetooth permission denied. Enable it in iOS Settings > Geneapp > Bluetooth.",
+          "Bluetooth permission denied. Enable it in iOS Settings > GeneEdge > Bluetooth.",
         );
       }
       if (state == BluetoothAdapterState.unavailable) {

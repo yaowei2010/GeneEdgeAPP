@@ -120,10 +120,10 @@ class ApiService {
     required String topic,
     required List<String> variants,
     dynamic yuguard,
+    bool debugMode = false,
   }) async {
     final endpoint = _buildUrl("/v1/ask");
     final url = Uri.parse(endpoint);
-    print(endpoint);
     final payload = {
       "user_id": userId,
       "query": aggregatedQuery,
@@ -133,18 +133,19 @@ class ApiService {
       "variants": variants,
       "yuguard": yuguard,
     };
-    print(payload);
     final headers = <String, String>{"Content-Type": "application/json"};
-    if (kDebugMode) {
+    if (debugMode && kDebugMode) {
       debugPrint("[GeneLLM] POST $endpoint");
+      debugPrint("[GeneLLM] headers=$headers");
       debugPrint(
         "[GeneLLM] payload=${const JsonEncoder.withIndent("  ").convert(payload)}",
       );
     }
-    print("[GeneLLM] POST $endpoint");
-    print("[GeneLLM] headers=$headers");
-    print("[GeneLLM] payload=${jsonEncode(payload)}");
-    await _appendGeneLlmLog("REQUEST url=$endpoint headers=$headers payload=${jsonEncode(payload)}");
+    if (debugMode) {
+      await _appendGeneLlmLog(
+        "REQUEST url=$endpoint headers=$headers payload=${jsonEncode(payload)}",
+      );
+    }
     final resp = await http
         .post(
           url,
@@ -152,16 +153,16 @@ class ApiService {
           body: jsonEncode(payload),
         )
         .timeout(const Duration(seconds: 600));
-    if (kDebugMode) {
+    if (debugMode && kDebugMode) {
       debugPrint("[GeneLLM] status=${resp.statusCode}");
     }
 
-    print(resp.statusCode);
-
     if (resp.statusCode < 200 || resp.statusCode >= 300) {
-      await _appendGeneLlmLog(
-        "RESPONSE status=${resp.statusCode} body=${resp.body}",
-      );
+      if (debugMode) {
+        await _appendGeneLlmLog(
+          "RESPONSE status=${resp.statusCode} body=${resp.body}",
+        );
+      }
       throw Exception("HTTP ${resp.statusCode}: ${resp.body}");
     }
     dynamic data;
@@ -170,10 +171,14 @@ class ApiService {
     } catch (_) {
       final raw = resp.body.trim();
       final answer = raw.length > 4000 ? raw.substring(0, 4000) : raw;
-      print("[GeneLLM] response_raw=$answer");
-      await _appendGeneLlmLog(
-        "RESPONSE status=${resp.statusCode} raw_body=${answer.replaceAll("\n", "\\n")}",
-      );
+      if (debugMode && kDebugMode) {
+        debugPrint("[GeneLLM] response_raw=$answer");
+      }
+      if (debugMode) {
+        await _appendGeneLlmLog(
+          "RESPONSE status=${resp.statusCode} raw_body=${answer.replaceAll("\n", "\\n")}",
+        );
+      }
       return LlmAskResult(
         answer: answer,
         url: endpoint,
@@ -185,10 +190,14 @@ class ApiService {
 
     final text = _extractLlmText(data);
     final answer = text.length > 4000 ? text.substring(0, 4000) : text;
-    print("[GeneLLM] response_text=$answer");
-    await _appendGeneLlmLog(
-      "RESPONSE status=${resp.statusCode} parsed_answer=${answer.replaceAll("\n", "\\n")}",
-    );
+    if (debugMode && kDebugMode) {
+      debugPrint("[GeneLLM] response_text=$answer");
+    }
+    if (debugMode) {
+      await _appendGeneLlmLog(
+        "RESPONSE status=${resp.statusCode} parsed_answer=${answer.replaceAll("\n", "\\n")}",
+      );
+    }
     return LlmAskResult(
       answer: answer,
       url: endpoint,
