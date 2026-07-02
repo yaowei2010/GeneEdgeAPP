@@ -53,6 +53,7 @@ class BleGateway {
 
     await FlutterBluePlus.startScan(
       timeout: const Duration(seconds: AppConfig.scanSeconds),
+      androidUsesFineLocation: true,
     );
 
     final sub = FlutterBluePlus.scanResults.listen((results) {
@@ -72,7 +73,9 @@ class BleGateway {
     await sub.cancel();
 
     if (candidates.isEmpty) {
-      throw Exception("No BLE devices found nearby.");
+      throw Exception(
+        "No GeneEdge BLE device found. Make sure Edge is powered on, in pairing/advertising mode, and advertising service UUID ${AppConfig.serviceUuid}.",
+      );
     }
 
     final rows = candidates.values.toList()
@@ -142,33 +145,46 @@ class BleGateway {
       preferredDeviceId: preferredDeviceId,
     );
 
+    Object? lastError;
     for (final dev in devices) {
-      try {
+      for (var attempt = 1; attempt <= 3; attempt += 1) {
         try {
           await dev.disconnect();
         } catch (_) {}
 
-        await dev.connect(
-          timeout: const Duration(seconds: 30),
-          autoConnect: false,
+        await Future.delayed(
+          Duration(milliseconds: Platform.isAndroid ? 900 : 250),
         );
 
-        await dev.connectionState
-            .timeout(const Duration(seconds: 20))
-            .firstWhere((s) => s == BluetoothConnectionState.connected);
-
-        await Future.delayed(const Duration(milliseconds: 500));
-        final (cmd, res, off) = await _findChars(dev);
-        return (dev, cmd, res, off);
-      } catch (_) {
         try {
-          await dev.disconnect();
-        } catch (_) {}
+          await dev.connect(
+            timeout: const Duration(seconds: 30),
+            autoConnect: false,
+          );
+
+          await dev.connectionState
+              .timeout(const Duration(seconds: 20))
+              .firstWhere((s) => s == BluetoothConnectionState.connected);
+
+          await Future.delayed(
+            Duration(milliseconds: Platform.isAndroid ? 900 : 500),
+          );
+          final (cmd, res, off) = await _findChars(dev);
+          return (dev, cmd, res, off);
+        } catch (e) {
+          lastError = e;
+          try {
+            await dev.disconnect();
+          } catch (_) {}
+          await Future.delayed(
+            Duration(milliseconds: Platform.isAndroid ? 1200 * attempt : 300),
+          );
+        }
       }
     }
 
     throw Exception(
-      "No compatible BLE gateway found (missing service/characteristics).",
+      "No compatible BLE gateway found (missing service/characteristics or connect failed). Last error: $lastError",
     );
   }
 

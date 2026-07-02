@@ -465,6 +465,12 @@ class ChatController extends ChangeNotifier {
         "topic: $topicText";
   }
 
+  String _buildBleFailureText(Object error) {
+    return "[BLE FAILED]\n"
+        "$error\n\n"
+        "已改用 cloud fallback。";
+  }
+
   String _buildMockLocalReplyText(Map<String, dynamic> payload) {
     final userId = payload["user_id"]?.toString() ?? "-";
     final query = payload["query"]?.toString() ?? "-";
@@ -864,7 +870,18 @@ class ChatController extends ChangeNotifier {
       _EdgeResult? edgeResult;
       try {
         edgeResult = await _tryFetchFromBle(trimmed);
-      } catch (_) {
+      } catch (e) {
+        _upsertDebugMessage(
+          typingId: typingId,
+          content: _buildBleFailureText(e),
+          kind: "ble_error",
+          fullJson: const JsonEncoder.withIndent("  ").convert({
+            "error": "$e",
+            "fallback": "cloud",
+          }),
+        );
+        notifyListeners();
+        await _save();
         edgeResult = null;
       }
 
