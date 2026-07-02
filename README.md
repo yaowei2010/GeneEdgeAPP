@@ -1,16 +1,26 @@
-# geneapp
+# GeneEdgeAPP
 
-A new Flutter project.
+NCKU GeneEdgeAPP Flutter client.
 
-## Getting Started
+## Overview
 
-This project is a starting point for a Flutter application.
+GeneEdgeAPP is a Flutter chat application that can use BLE edge-device data,
+local mock payloads, and an LLM backend.
 
-A few resources to get you started if this is your first Flutter project:
+## Android Setup
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+See [README-ANDROID.md](README-ANDROID.md) for Android environment setup,
+device installation, local payload placement, BLE notes, and troubleshooting.
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## Run
+
+```bash
+flutter pub get
+flutter run -d <deviceId> -t lib/main.dart
+```
+
+For local mock testing:
+
+```bash
+flutter run -d <deviceId> -t lib/main_local_mock.dart
+```
