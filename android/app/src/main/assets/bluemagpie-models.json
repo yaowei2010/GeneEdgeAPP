@@ -1,0 +1,29 @@
+{
+  "repository": "hans00/BlueMagpie-TTS-GGUF",
+  "revision": "37ab65a2836e6cf5780f2e5566ae77ca5967982f",
+  "conversionLicense": "Apache-2.0",
+  "conversionLicenseUrl": "https://huggingface.co/hans00/BlueMagpie-TTS-GGUF/blob/37ab65a2836e6cf5780f2e5566ae77ca5967982f/README.md#license",
+  "upstreamRepository": "OpenFormosa/BlueMagpie-TTS",
+  "upstreamRevision": "aaf1a0878e37875382bb0e5c8a3a2ba43be67297",
+  "upstreamLicense": "other",
+  "upstreamLicenseUrl": "https://huggingface.co/OpenFormosa/BlueMagpie-TTS/blob/aaf1a0878e37875382bb0e5c8a3a2ba43be67297/README.md#intended-use",
+  "licenseReviewRequired": true,
+  "architectureProvenanceUrl": "https://github.com/OpenBMB/VoxCPM",
+  "minimumFreeBytes": 536870912,
+  "models": [
+    {
+      "id": "barbet_q4_k_m",
+      "filename": "BlueMagpie-Barbet-1B-q4_k_m.gguf",
+      "byteSize": 693008576,
+      "sha256": "c8e66535e9ee3b114a9be05ac404cb9585910865718095a3914c2b51c4d5462f",
+      "provenanceUrl": "https://github.com/OpenFormosa/Barbet"
+    },
+    {
+      "id": "audio_vae_f16",
+      "filename": "BlueMagpie-AudioVAE.gguf",
+      "byteSize": 1884843552,
+      "sha256": "de3acf2f77842aa0cd7a958bf9ce5c549b94db0c7930776f320ad6152e1e86f6",
+      "provenanceUrl": "https://huggingface.co/OpenFormosa/BlueMagpie-TTS"
+    }
+  ]
+}

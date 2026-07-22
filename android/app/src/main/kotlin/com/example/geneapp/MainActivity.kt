@@ -26,6 +26,9 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        if (BuildConfig.BLUEMAGPIE_POC_ENABLED) {
+            flutterEngine.plugins.add(BlueMagpieTtsPlugin())
+        }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
             .setMethodCallHandler { call, result ->
                 when (call.method) {

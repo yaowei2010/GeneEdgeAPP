@@ -1,3 +1,7 @@
 [submodule "third_party/Vulkan-Headers"]
 	path = third_party/Vulkan-Headers
 	url = https://github.com/KhronosGroup/Vulkan-Headers.git
+[submodule "third_party/llama.rn-codec"]
+	path = third_party/llama.rn-codec
+	url = https://github.com/mybigday/llama.rn.git
+	branch = codec

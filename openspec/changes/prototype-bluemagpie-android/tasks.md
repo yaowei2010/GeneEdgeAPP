@@ -6,13 +6,13 @@
 
 ## 2. 模型安全與 Android worker
 
-- [ ] 2.1 [P] 依「Install models outside Git with a verified manifest」完成「External model validation」，固定upstream revision、檔名、byte size、SHA-256、license/provenance並拒絕private model directory外的canonical path；以model validation matrix unit tests及Git/APK檔案清單檢查驗證。
-- [ ] 2.2 [P] 建立獨立 `BlueMagpieTtsPlugin` worker executor與events，使所有model work離開main thread且plugin detach會release；以Android unit tests或instrumented fake native bridge驗證main-thread callback、duplicate call與detach cleanup。
+- [x] 2.1 [P] 依「Install models outside Git with a verified manifest」完成「External model validation」，固定upstream revision、檔名、byte size、SHA-256、license/provenance並拒絕private model directory外的canonical path；以model validation matrix unit tests及Git/APK檔案清單檢查驗證。
+- [x] 2.2 [P] 建立獨立 `BlueMagpieTtsPlugin` worker executor與events，使所有model work離開main thread且plugin detach會release；以Android unit tests或instrumented fake native bridge驗證main-thread callback、duplicate call與detach cleanup。
 
 ## 3. Codec-enabled native runtime
 
-- [ ] 3.1 依「Pin codec source without embedding React Native」將codec branch固定在commit `7d5cf82cf33883bc80ec845905f5d85c5565d132`，只納入C++ runtime且不引入npm/JSI/React Native；以submodule status、license inventory及flag-on CMake configure驗證revision與dependency boundary。
-- [ ] 3.2 依「Separate native libraries and load BlueMagpie lazily」完成「Runtime provenance report」，建立hidden-symbol `libgeneedge_bluemagpie.so`與JNI probe，使App啟動不載入模型且runtime缺失回傳`runtime_missing`；以`readelf`/APK library listing與probe instrumented test驗證。
+- [x] 3.1 依「Pin codec source without embedding React Native」將codec branch固定在commit `7d5cf82cf33883bc80ec845905f5d85c5565d132`，只納入C++ runtime且不引入npm/JSI/React Native；以submodule status、license inventory及flag-on CMake configure驗證revision與dependency boundary。
+- [x] 3.2 依「Separate native libraries and load BlueMagpie lazily」完成「Runtime provenance report」，建立hidden-symbol `libgeneedge_bluemagpie.so`與JNI probe，使App啟動不載入模型且runtime缺失回傳`runtime_missing`；以`readelf`/APK library listing與probe instrumented test驗證。
 - [ ] 3.3 完成「Explicit native lifecycle」，實作single-context initialize/release、worker cancellation checks、backend與RSS量測，duplicate initialization不得二次配置；以native lifecycle tests及真機重複initialize/release 20次驗證。
 - [ ] 3.4 依「Generate complete WAV before adding streaming」完成「Offline WAV synthesis」，將固定中文句與最多200 Unicode scalar values合成private-cache mono 48 kHz PCM WAV並驗證header/sample count/metrics；以native smoke test解析WAV且在真機播放驗證。
 - [ ] 3.5 完成「Cancellation and cleanup」，使active request停止接收frames、partial WAV刪除、頁面dispose後context釋放且可再次合成；以cancel-before-audio、cancel-during-decode與dispose instrumented tests驗證。
@@ -24,5 +24,5 @@
 
 ## 5. 離線與回歸結論
 
-- [ ] 5.1 完成「Offline and regression verification」自動部分，執行flag-off與flag-on-no-model兩套CI命令，確認現有login/chat/BLE/ASR/LLM tests無回歸且no-model page結構化失敗；保存command與結果於`docs/bluemagpie-android-poc.md`。
+- [x] 5.1 完成「Offline and regression verification」自動部分，執行flag-off與flag-on-no-model兩套CI命令，確認現有login/chat/BLE/ASR/LLM tests無回歸且no-model page結構化失敗；保存command與結果於`docs/bluemagpie-android-poc.md`。
 - [ ] 5.2 完成「Offline and regression verification」真機部分，以飛航模式合成固定中文句並執行20次soak，記錄device/SDK/RAM/SoC/backend/revisions/load/first-audio/total/peak-RSS/output-duration/crash/ANR結果；只有20次完成且無partial WAV殘留才把PoC判定為可進入聊天整合評估。
