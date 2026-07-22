@@ -44,19 +44,24 @@ flag-on debug APK 使用獨立 application ID `com.example.geneapp.bluemagpie`�
 
 ## 安裝模型到手機
 
-先安裝 APK、啟動 App 一次，再透過 Android SDK 的 adb 執行：
+先安裝 APK，再透過 Android SDK 的 adb 執行：
 
 ```sh
 adb install -r build/app/outputs/flutter-apk/app-debug.apk
-adb shell mkdir -p /sdcard/Android/data/com.example.geneapp.bluemagpie/files/models/bluemagpie
-adb push BlueMagpie-Barbet-1B-q4_k_m.gguf \
-  /sdcard/Android/data/com.example.geneapp.bluemagpie/files/models/bluemagpie/
-adb push BlueMagpie-AudioVAE.gguf \
-  /sdcard/Android/data/com.example.geneapp.bluemagpie/files/models/bluemagpie/
+adb push BlueMagpie-Barbet-1B-q4_k_m.gguf /data/local/tmp/
+adb push BlueMagpie-AudioVAE.gguf /data/local/tmp/
+adb shell chmod 644 /data/local/tmp/BlueMagpie-Barbet-1B-q4_k_m.gguf
+adb shell chmod 644 /data/local/tmp/BlueMagpie-AudioVAE.gguf
+adb shell run-as com.example.geneapp.bluemagpie mkdir -p no_backup/models/bluemagpie
+adb shell run-as com.example.geneapp.bluemagpie cp \
+  /data/local/tmp/BlueMagpie-Barbet-1B-q4_k_m.gguf no_backup/models/bluemagpie/
+adb shell run-as com.example.geneapp.bluemagpie cp \
+  /data/local/tmp/BlueMagpie-AudioVAE.gguf no_backup/models/bluemagpie/
 ```
 
-若系統封鎖直接寫入 `Android/data`，可用 Android Studio 的 Device Explorer 將兩個
-檔案放入相同的 app-specific external files 目錄。不要改檔名。
+使用 internal no-backup storage 是為了避開 Android 16 對 `Android/data` 的 FUSE
+擁有者過濾；該目錄仍是 App 私有、解除安裝時會刪除，且不會被系統雲端備份。
+完成手機端 SHA-256 驗證後即可刪除 `/data/local/tmp` 暫存檔。不要改模型檔名。
 
 ## 手機操作
 
@@ -85,7 +90,12 @@ PoC 宣告為產品可用。Vulkan fallback 也尚未驗收，第一輪請使用
 - Pixel 10 Pro、Android 16 / SDK 36、ARM64。
 - `com.example.geneapp` 與 `com.example.geneapp.bluemagpie` 已驗證可同時安裝。
 - 測試 App cold start 成功；手機端兩個 GGUF 的 byte size 與 SHA-256 均符合 manifest。
-- 中文合成、播放與重複 soak 仍待使用者在診斷頁觸發及觀察。
+- Android 16 會對 adb 建立的 app-specific external 目錄套用 FUSE 擁有者過濾，造成
+  `model_missing`；改用 App UID 擁有的 internal no-backup storage 後模型驗證與 native
+  初始化通過。
+- CPU 生成跑到 50 patches 後因速度過慢手動取消；觀察到約 4.7 GB resident / 約
+  5.0 GB total PSS，每 patch 約 8–15 秒，沒有 crash 或 OOM，但尚未進入 WAV decode/playback。
+- 中文播放、Vulkan backend 與重複 soak 仍待驗證。
 
 ## 來源與限制
 

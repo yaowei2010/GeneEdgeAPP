@@ -7,7 +7,7 @@
 
 ## 2. 模型安全與 Android worker
 
-- [x] 2.1 [P] 依「Install models outside Git with a verified manifest」完成「External model validation」，固定upstream revision、檔名、byte size、SHA-256、license/provenance並拒絕private model directory外的canonical path；以model validation matrix unit tests及Git/APK檔案清單檢查驗證。
+- [x] 2.1 [P] 依「Install models outside Git with a verified manifest」完成「App-private model validation」，固定upstream revision、檔名、byte size、SHA-256、license/provenance並拒絕internal no-backup model directory外的canonical path；以model validation matrix unit tests及Git/APK檔案清單檢查驗證。Android 16 真機確認不得直接由 adb 建立 external app-specific model directory，故改用 App 自建 no-backup storage 與 debug `run-as` sideload。
 - [x] 2.2 [P] 建立獨立 `BlueMagpieTtsPlugin` worker executor與events，使所有model work離開main thread且plugin detach會release；以Android unit tests或instrumented fake native bridge驗證main-thread callback、duplicate call與detach cleanup。
 
 ## 3. Codec-enabled native runtime

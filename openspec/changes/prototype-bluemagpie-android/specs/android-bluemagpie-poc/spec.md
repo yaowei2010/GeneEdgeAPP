@@ -22,8 +22,8 @@ The PoC SHALL report whether the codec-enabled runtime is compiled, the pinned r
 - **WHEN** the application was built with runtime revision `7d5cf82cf33883bc80ec845905f5d85c5565d132`
 - **THEN** the report returns `available`, `arm64-v8a`, and the selected CPU or Vulkan backend
 
-### Requirement: External model validation
-The PoC MUST load model weights only from application-private external storage and SHALL validate canonical path, readability, minimum free space, expected file size, and configured SHA-256 before native initialization. GGUF weights MUST NOT be stored in Git, APK, or AAB artifacts.
+### Requirement: App-private model validation
+The PoC MUST load model weights only from application-private internal no-backup storage and SHALL validate canonical path, readability, minimum free space, expected file size, and configured SHA-256 before native initialization. GGUF weights MUST NOT be stored in Git, APK, AAB, or cloud backup artifacts. Debug sideloading MAY stage files in `/data/local/tmp`, but native initialization MUST NOT read models from that staging path.
 
 #### Scenario: Valid model pair
 - **WHEN** `BlueMagpie-Barbet-1B-q4_k_m.gguf` and `BlueMagpie-AudioVAE.gguf` match configured sizes and SHA-256 values

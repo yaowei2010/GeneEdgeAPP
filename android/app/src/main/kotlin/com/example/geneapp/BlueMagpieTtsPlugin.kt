@@ -4,6 +4,7 @@ import android.app.ActivityManager
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.media.MediaPlayer
 import com.example.geneapp.bluemagpie.ModelManifestParser
 import com.example.geneapp.bluemagpie.ModelValidationCode
@@ -390,15 +391,35 @@ private class PrivateCacheAudioPlayer(private val cacheDirectory: File) : BlueMa
 
 private class AndroidScaffoldBlueMagpieBridge(private val context: Context) : BlueMagpieNativeBridge {
     private val modelDirectory: File
-        get() = File(context.getExternalFilesDir(null), "models/bluemagpie")
+        get() = File(context.noBackupFilesDir, "models/bluemagpie")
 
     private fun manifest() = context.assets.open("bluemagpie-models.json").bufferedReader().use {
         ModelManifestParser.parse(it.readText())
     }
 
     private fun validation() = manifest().let { manifest ->
+        if (!modelDirectory.exists()) {
+            modelDirectory.mkdirs()
+        }
+        Log.i(
+            DIAGNOSTIC_TAG,
+            "model-root package=${context.packageName} storage=no_backup " +
+                "exists=${modelDirectory.exists()} directory=${modelDirectory.isDirectory} readable=${modelDirectory.canRead()}",
+        )
+        manifest.models.forEach { descriptor ->
+            val candidate = File(modelDirectory, descriptor.filename)
+            Log.i(
+                DIAGNOSTIC_TAG,
+                "model-file name=${descriptor.filename} exists=${candidate.exists()} file=${candidate.isFile} " +
+                    "readable=${candidate.canRead()} bytes=${candidate.length()}",
+            )
+        }
         manifest to ModelValidator(manifest, freeBytesProvider = { modelDirectory.usableSpace })
             .validate(modelDirectory)
+    }
+
+    private companion object {
+        const val DIAGNOSTIC_TAG = "BlueMagpiePoC"
     }
 
     override fun probe(): Map<String, Any?> = androidBlueMagpieRuntimeProbe.probe(

@@ -87,7 +87,7 @@ probe、initialize 與 synthesize 均回傳 monotonic elapsed time；native 讀�
 ## Risks / Trade-offs
 
 - [Codec branch 未主線化且 README 仍稱 TTS unsupported] → 固定 commit、隔離 submodule/feature flag，先以 compile probe 驗證，不把它視為穩定 dependency。
-- [模型至少約 2.4 GB且 runtime memory 未知] → 外部安裝、lazy load、記憶體前後量測與 8 GB RAM 級裝置優先測試。
+- [模型至少約 2.4 GB且 runtime memory 未知] → 權重獨立安裝至 internal no-backup storage、lazy load、記憶體前後量測與 8 GB RAM 級裝置優先測試；避免 Android 16 對 adb 建立之 external app-specific 目錄的 FUSE 擁有者過濾。
 - [兩套不同 ggml revision 可能 symbol/ABI 衝突] → 使用獨立 shared libraries、hidden visibility 與各自 CMake scope。
 - [Vulkan driver 差異造成 crash或錯誤輸出] → capability probe、一次 CPU fallback，CPU/Vulkan結果分別紀錄。
 - [完整 WAV 延遲高於可互動門檻] → PoC 先取得量測；串流另立 change，不在此 change 中加入未驗證複雜度。
