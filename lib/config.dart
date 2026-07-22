@@ -2,7 +2,7 @@ import "package:flutter_blue_plus/flutter_blue_plus.dart";
 
 class AppConfig {
   static const int scanSeconds = 5;
-  static const String preferredNamePrefix = "";
+  static const String preferredNamePrefix = "raspberrypi";
 
   // Must match edge Python gateway UUIDs.
   static final Guid serviceUuid = Guid("12345678-1234-5678-1234-56789abcdef0");

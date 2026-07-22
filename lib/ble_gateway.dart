@@ -1,6 +1,7 @@
 import "dart:async";
 import "dart:convert";
 import "dart:io";
+import "package:flutter/foundation.dart";
 import "package:flutter_blue_plus/flutter_blue_plus.dart";
 import "config.dart";
 
@@ -16,7 +17,22 @@ class BleDeviceOption {
   });
 }
 
+class _BleTerminalException implements Exception {
+  final String message;
+
+  const _BleTerminalException(this.message);
+
+  @override
+  String toString() => message;
+}
+
 class BleGateway {
+  void _log(String message) {
+    if (kDebugMode) {
+      debugPrint("[BLE] $message");
+    }
+  }
+
   Future<void> _waitBluetoothReady() async {
     final deadline = DateTime.now().add(const Duration(seconds: 10));
     while (true) {
@@ -50,7 +66,9 @@ class BleGateway {
     await _waitBluetoothReady();
 
     final candidates = <String, ({BluetoothDevice dev, int rssi})>{};
+    final fallbackCandidates = <String, ({BluetoothDevice dev, int rssi})>{};
 
+    _log("scan start service=${AppConfig.serviceUuid}");
     await FlutterBluePlus.startScan(
       timeout: const Duration(seconds: AppConfig.scanSeconds),
       androidUsesFineLocation: true,
@@ -59,9 +77,28 @@ class BleGateway {
     final sub = FlutterBluePlus.scanResults.listen((results) {
       for (final r in results) {
         final id = r.device.remoteId.str;
-        final prev = candidates[id];
-        if (prev == null || r.rssi > prev.rssi) {
-          candidates[id] = (dev: r.device, rssi: r.rssi);
+        final advName = r.advertisementData.advName;
+        final platformName = r.device.platformName;
+        final hasService =
+            r.advertisementData.serviceUuids.contains(AppConfig.serviceUuid);
+        final looksLikeEdge = _looksLikePreferredDevice(platformName) ||
+            _looksLikePreferredDevice(advName);
+        final row = (dev: r.device, rssi: r.rssi);
+
+        if (hasService || looksLikeEdge) {
+          final prev = candidates[id];
+          if (prev == null || r.rssi > prev.rssi) {
+            candidates[id] = row;
+            _log(
+              "candidate id=$id rssi=${r.rssi} platform=$platformName adv=$advName service=$hasService",
+            );
+          }
+          continue;
+        }
+
+        final prevFallback = fallbackCandidates[id];
+        if (prevFallback == null || r.rssi > prevFallback.rssi) {
+          fallbackCandidates[id] = row;
         }
       }
     });
@@ -72,6 +109,13 @@ class BleGateway {
     } catch (_) {}
     await sub.cancel();
 
+    if (candidates.isEmpty && fallbackCandidates.isNotEmpty) {
+      _log(
+        "no advertised Edge service/name found; falling back to ${fallbackCandidates.length} nearby device(s)",
+      );
+      candidates.addAll(fallbackCandidates);
+    }
+
     if (candidates.isEmpty) {
       throw Exception(
         "No GeneEdge BLE device found. Make sure Edge is powered on, in pairing/advertising mode, and advertising service UUID ${AppConfig.serviceUuid}.",
@@ -80,8 +124,16 @@ class BleGateway {
 
     final rows = candidates.values.toList()
       ..sort((a, b) => b.rssi.compareTo(a.rssi));
+    _log("scan done candidates=${rows.length}");
 
     return rows;
+  }
+
+  bool _looksLikePreferredDevice(String name) {
+    final normalized = name.trim().toLowerCase();
+    if (normalized.isEmpty) return false;
+    final prefix = AppConfig.preferredNamePrefix.toLowerCase();
+    return prefix.isNotEmpty && normalized.startsWith(prefix);
   }
 
   List<BluetoothDevice> _prioritizeDevices(
@@ -148,6 +200,9 @@ class BleGateway {
     Object? lastError;
     for (final dev in devices) {
       for (var attempt = 1; attempt <= 3; attempt += 1) {
+        _log(
+          "connect attempt=$attempt id=${dev.remoteId.str} name=${dev.platformName}",
+        );
         try {
           await dev.disconnect();
         } catch (_) {}
@@ -170,9 +225,12 @@ class BleGateway {
             Duration(milliseconds: Platform.isAndroid ? 900 : 500),
           );
           final (cmd, res, off) = await _findChars(dev);
+          _log("connected id=${dev.remoteId.str}");
           return (dev, cmd, res, off);
         } catch (e) {
           lastError = e;
+          _log(
+              "connect failed id=${dev.remoteId.str} attempt=$attempt error=$e");
           try {
             await dev.disconnect();
           } catch (_) {}
@@ -222,9 +280,12 @@ class BleGateway {
     List<int> bytes,
   ) async {
     const chunkSize = 20;
+    _log("write command bytes=${bytes.length}");
     for (var i = 0; i < bytes.length; i += chunkSize) {
       final end = (i + chunkSize < bytes.length) ? i + chunkSize : bytes.length;
-      await c.write(bytes.sublist(i, end), withoutResponse: false);
+      await c
+          .write(bytes.sublist(i, end), withoutResponse: false)
+          .timeout(const Duration(seconds: 8));
       await Future.delayed(const Duration(milliseconds: 30));
     }
   }
@@ -256,18 +317,21 @@ class BleGateway {
     final deadline = DateTime.now().add(timeout);
     final buffer = <int>[];
     var offset = 0;
+    _log("read result start timeout=${timeout.inSeconds}s");
 
     while (true) {
       if (DateTime.now().isAfter(deadline)) {
         throw Exception("Timeout waiting for BLE result");
       }
 
-      await offChar.write(
-        utf8.encode(offset.toString()),
-        withoutResponse: false,
-      );
+      await offChar
+          .write(
+            utf8.encode(offset.toString()),
+            withoutResponse: false,
+          )
+          .timeout(const Duration(seconds: 8));
 
-      final bytes = await resChar.read();
+      final bytes = await resChar.read().timeout(const Duration(seconds: 8));
       if (bytes.isEmpty) {
         await Future.delayed(const Duration(milliseconds: 120));
         continue;
@@ -289,7 +353,56 @@ class BleGateway {
       throw Exception("BLE result JSON is not an object");
     }
 
-    return _inflateApiResponseIfNeeded(decoded);
+    final state = _inflateApiResponseIfNeeded(decoded);
+    _log(
+      "read result done bytes=${buffer.length} status=${state["status"]} job=${state["job_id"]}",
+    );
+    return state;
+  }
+
+  Future<void> _disconnectQuietly(BluetoothDevice? dev) async {
+    if (dev == null) return;
+    try {
+      await dev.disconnect();
+    } catch (_) {}
+  }
+
+  bool _isCurrentJob(Map<String, dynamic> state, String jobId) {
+    return state["job_id"]?.toString() == jobId;
+  }
+
+  void _throwIfOtherRunningJob(Map<String, dynamic> state, String jobId) {
+    final returnedJobId = state["job_id"]?.toString() ?? "";
+    final status = state["status"]?.toString() ?? "";
+    if (returnedJobId.isEmpty || returnedJobId == jobId) return;
+    if (status == "running") {
+      throw _BleTerminalException(
+        "BLE gateway is busy with another job: $returnedJobId",
+      );
+    }
+  }
+
+  Map<String, dynamic>? _terminalResultForCurrentJob(
+    Map<String, dynamic> state,
+    String jobId,
+  ) {
+    final returnedJobId = state["job_id"]?.toString() ?? "";
+    final status = state["status"]?.toString() ?? "";
+
+    if (returnedJobId.isNotEmpty && returnedJobId != jobId) {
+      if (status == "running") {
+        throw _BleTerminalException(
+          "BLE gateway is busy with another job: $returnedJobId",
+        );
+      }
+      return null;
+    }
+
+    if (status == "done") return state;
+    if (status == "error") {
+      throw _BleTerminalException("BLE job error: ${state["error"]}");
+    }
+    return null;
   }
 
   Future<Map<String, dynamic>> runJobAndGetResult({
@@ -298,44 +411,125 @@ class BleGateway {
     required String topic,
     String? preferredDeviceId,
   }) async {
-    final (dev, cmdChar, resChar, offChar) = await _connectToAnySupportedDevice(
-        preferredDeviceId: preferredDeviceId);
+    BluetoothDevice? dev;
+    BluetoothCharacteristic? cmdChar;
+    BluetoothCharacteristic? resChar;
+    BluetoothCharacteristic? offChar;
+    var commandAccepted = false;
+    var probeBeforeSend = false;
+    var reconnectAttempt = 0;
+
+    final cmd = {
+      "job_id": jobId,
+      "params": {"query": query, "topic": topic},
+    };
+    final cmdBytes = utf8.encode(jsonEncode(cmd));
+    final overallDeadline = DateTime.now().add(const Duration(seconds: 320));
+
+    Future<void> connect() async {
+      final conn = await _connectToAnySupportedDevice(
+        preferredDeviceId: preferredDeviceId,
+      );
+      dev = conn.$1;
+      cmdChar = conn.$2;
+      resChar = conn.$3;
+      offChar = conn.$4;
+    }
+
+    Future<void> reconnectAfter(Object reason) async {
+      await _disconnectQuietly(dev);
+      dev = null;
+      cmdChar = null;
+      resChar = null;
+      offChar = null;
+
+      const delays = [
+        Duration(seconds: 1),
+        Duration(seconds: 2),
+        Duration(seconds: 5),
+        Duration(seconds: 10),
+      ];
+
+      Object lastError = reason;
+      while (true) {
+        if (DateTime.now().isAfter(overallDeadline)) {
+          throw Exception(
+            "Timeout waiting for BLE job result (overall): $lastError",
+          );
+        }
+
+        final delay = delays[reconnectAttempt < delays.length
+            ? reconnectAttempt
+            : delays.length - 1];
+        reconnectAttempt += 1;
+        await Future.delayed(delay);
+
+        try {
+          await connect();
+          probeBeforeSend = true;
+          _log("reconnected after error=$lastError");
+          return;
+        } catch (e) {
+          lastError = e;
+          await _disconnectQuietly(dev);
+          dev = null;
+          cmdChar = null;
+          resChar = null;
+          offChar = null;
+        }
+      }
+    }
+
+    await connect();
 
     try {
-      final cmd = {
-        "job_id": jobId,
-        "params": {"query": query, "topic": topic},
-      };
-
-      final cmdBytes = utf8.encode(jsonEncode(cmd));
-      await _safeWriteChunkedWithResponse(cmdChar, cmdBytes);
-
-      final overallDeadline = DateTime.now().add(const Duration(seconds: 320));
-
       while (true) {
         if (DateTime.now().isAfter(overallDeadline)) {
           throw Exception("Timeout waiting for BLE job result (overall)");
         }
 
-        final state = await _readResultChunked(
-          resChar: resChar,
-          offChar: offChar,
-          timeout: const Duration(seconds: 25),
-        );
+        try {
+          if (!commandAccepted && probeBeforeSend) {
+            final state = await _readResultChunked(
+              resChar: resChar!,
+              offChar: offChar!,
+              timeout: const Duration(seconds: 12),
+            );
+            _throwIfOtherRunningJob(state, jobId);
 
-        final status = (state["status"] ?? "").toString();
+            if (_isCurrentJob(state, jobId)) {
+              commandAccepted = true;
+              final terminal = _terminalResultForCurrentJob(state, jobId);
+              if (terminal != null) return terminal;
+            }
+            probeBeforeSend = false;
+          }
 
-        if (status == "done") return state;
-        if (status == "error") {
-          throw Exception("BLE job error: ${state["error"]}");
+          if (!commandAccepted) {
+            _log("send job=$jobId topic=$topic");
+            await _safeWriteChunkedWithResponse(cmdChar!, cmdBytes);
+            commandAccepted = true;
+          }
+
+          final state = await _readResultChunked(
+            resChar: resChar!,
+            offChar: offChar!,
+            timeout: const Duration(seconds: 25),
+          );
+
+          final terminal = _terminalResultForCurrentJob(state, jobId);
+          if (terminal != null) return terminal;
+
+          reconnectAttempt = 0;
+          await Future.delayed(const Duration(seconds: 1));
+        } on _BleTerminalException {
+          rethrow;
+        } catch (e) {
+          await reconnectAfter(e);
         }
-
-        await Future.delayed(const Duration(seconds: 1));
       }
     } finally {
-      try {
-        await dev.disconnect();
-      } catch (_) {}
+      await _disconnectQuietly(dev);
     }
   }
 }

@@ -119,6 +119,8 @@ class ApiService {
     required String aggregatedQuery,
     required String topic,
     required List<String> variants,
+    int originalVariantCount = 0,
+    int noCallCount = 0,
     dynamic yuguard,
     bool debugMode = false,
   }) async {
@@ -131,6 +133,10 @@ class ApiService {
       "SNP_list": variants,
       "snp_list": variants,
       "variants": variants,
+      "variant_input_count":
+          originalVariantCount == 0 ? variants.length : originalVariantCount,
+      "variant_used_count": variants.length,
+      "no_call_count": noCallCount,
       "yuguard": yuguard,
     };
     final headers = <String, String>{"Content-Type": "application/json"};
@@ -163,7 +169,11 @@ class ApiService {
           "RESPONSE status=${resp.statusCode} body=${resp.body}",
         );
       }
-      throw Exception("HTTP ${resp.statusCode}: ${resp.body}");
+      final body = resp.body.trim();
+      final preview = body.length > 800 ? body.substring(0, 800) : body;
+      throw Exception(
+        "Cloud LLM HTTP ${resp.statusCode} from $endpoint: $preview",
+      );
     }
     dynamic data;
     try {

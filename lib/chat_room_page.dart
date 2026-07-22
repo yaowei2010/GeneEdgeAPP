@@ -31,73 +31,10 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
 
   @override
   void dispose() {
+    _speech.cancel();
     _textCtrl.dispose();
     _scrollCtrl.dispose();
     super.dispose();
-  }
-
-  Future<void> _initSpeech() async {
-    _speechReady = await _speech.initialize();
-    if (!mounted) return;
-    setState(() {});
-  }
-
-  Future<void> _toggleVoiceInput() async {
-    if (_isListening) {
-      await _stopVoiceInput();
-    } else {
-      await _startVoiceInput();
-    }
-  }
-
-  Future<bool> _ensureSpeechReady() async {
-    if (!_speechReady) {
-      await _initSpeech();
-      if (!_speechReady) {
-        if (!mounted) return false;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("語音辨識初始化失敗，請確認麥克風權限。")),
-        );
-        return false;
-      }
-    }
-    return true;
-  }
-
-  Future<void> _startVoiceInput() async {
-    final ok = await _ensureSpeechReady();
-    if (!ok || _isListening) return;
-
-    _textCtrl.clear();
-    _textCtrl.selection = const TextSelection.collapsed(offset: 0);
-
-    await _speech.listen(
-      localeId: "zh_TW",
-      onResult: _onSpeechResult,
-      listenOptions: SpeechListenOptions(
-        partialResults: true,
-      ),
-    );
-    if (!mounted) return;
-    setState(() => _isListening = true);
-  }
-
-  Future<void> _stopVoiceInput() async {
-    if (_isListening) {
-      await _speech.stop();
-      if (!mounted) return;
-      setState(() => _isListening = false);
-    }
-  }
-
-  void _onSpeechResult(SpeechRecognitionResult result) {
-    _textCtrl.text = result.recognizedWords;
-    _textCtrl.selection = TextSelection.fromPosition(
-      TextPosition(offset: _textCtrl.text.length),
-    );
-    if (result.finalResult && mounted) {
-      setState(() => _isListening = false);
-    }
   }
 
   void _scrollToBottom() {
@@ -232,6 +169,70 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
         );
       },
     );
+  }
+
+  Future<void> _initSpeech() async {
+    _speechReady = await _speech.initialize();
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  Future<void> _toggleVoiceInput() async {
+    if (_isListening) {
+      await _stopVoiceInput();
+    } else {
+      await _startVoiceInput();
+    }
+  }
+
+  Future<bool> _ensureSpeechReady() async {
+    if (!_speechReady) {
+      await _initSpeech();
+      if (!_speechReady) {
+        if (!mounted) return false;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("語音辨識初始化失敗，請確認麥克風與語音辨識權限。")),
+        );
+        return false;
+      }
+    }
+    return true;
+  }
+
+  Future<void> _startVoiceInput() async {
+    final ok = await _ensureSpeechReady();
+    if (!ok || _isListening) return;
+
+    _textCtrl.clear();
+    _textCtrl.selection = const TextSelection.collapsed(offset: 0);
+    FocusManager.instance.primaryFocus?.unfocus();
+
+    await _speech.listen(
+      localeId: "zh_TW",
+      onResult: _onSpeechResult,
+      listenOptions: SpeechListenOptions(
+        partialResults: true,
+      ),
+    );
+    if (!mounted) return;
+    setState(() => _isListening = true);
+  }
+
+  Future<void> _stopVoiceInput() async {
+    if (!_isListening) return;
+    await _speech.stop();
+    if (!mounted) return;
+    setState(() => _isListening = false);
+  }
+
+  void _onSpeechResult(SpeechRecognitionResult result) {
+    _textCtrl.text = result.recognizedWords;
+    _textCtrl.selection = TextSelection.fromPosition(
+      TextPosition(offset: _textCtrl.text.length),
+    );
+    if (result.finalResult && mounted) {
+      setState(() => _isListening = false);
+    }
   }
 
   TopicPresentation _topicPresentation(ChatTopic topic) {
@@ -1511,7 +1512,7 @@ class _Composer extends StatelessWidget {
                       color: isListening
                           ? Theme.of(context).colorScheme.primary
                           : null,
-                      tooltip: "長按說話，放開停止（點擊切換）",
+                      tooltip: "中文語音輸入",
                       onPressed: onMic,
                     ),
                   ),

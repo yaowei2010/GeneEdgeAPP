@@ -49,3 +49,20 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Local ASR models are installed on-device and should not be committed.
+*.ggml.bin
+*.gguf
+ggml-model-*.bin
+/models/
+/android/app/src/main/assets/models/
+.spectra/
+openspec/.vector-search.db*
+
+# Spectra-generated command wrappers are local tool integrations. Keep the
+# shared skills/specs, but do not duplicate command shims for every agent.
+.agent/workflows/
+.claude/settings.json
+.cursor/commands/
+.github/prompts/
+.opencode/commands/

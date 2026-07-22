@@ -62,6 +62,18 @@ class _LlmInputBundle {
   });
 }
 
+class _VariantFilterResult {
+  final List<String> variants;
+  final int originalCount;
+  final int noCallCount;
+
+  const _VariantFilterResult({
+    required this.variants,
+    required this.originalCount,
+    required this.noCallCount,
+  });
+}
+
 class ChatController extends ChangeNotifier {
   static const List<ChatTopic> selectableTopics = [
     ChatTopic.alcohol,
@@ -466,9 +478,15 @@ class ChatController extends ChangeNotifier {
   }
 
   String _buildBleFailureText(Object error) {
-    return "[BLE FAILED]\n"
+    return "[EDGE BLE FAILED]\n"
         "$error\n\n"
-        "已改用 cloud fallback。";
+        "Edge 藍牙或 Edge gateway 這段失敗；接下來會改用 Cloud LLM fallback。";
+  }
+
+  String _buildCloudFailureText(Object error) {
+    return "[CLOUD LLM FAILED]\n"
+        "$error\n\n"
+        "Cloud LLM API 這段失敗；如果前面已顯示 EDGE RESULT，代表 Edge/BLE 資料已成功回來。";
   }
 
   String _buildMockLocalReplyText(Map<String, dynamic> payload) {
@@ -619,6 +637,62 @@ class ChatController extends ChangeNotifier {
     );
   }
 
+  String _normalizeTopicForCloud(String rawTopic) {
+    final normalized = rawTopic.trim().toLowerCase();
+    switch (normalized) {
+      case "alcohol":
+        return "酒精";
+      case "medication":
+      case "drug":
+        return "藥物";
+      case "memory":
+        return "記憶";
+      case "mental":
+      case "mental_state":
+      case "mood":
+        return "心理狀態";
+      case "hypertension":
+      case "bp":
+        return "高血壓";
+      case "lipid":
+      case "lipids":
+        return "血脂";
+      case "nutrition":
+      case "general":
+        return "營養";
+      default:
+        return rawTopic.trim().isEmpty ? _mapTopicForEdge(topic) : rawTopic;
+    }
+  }
+
+  bool _isNoCallVariant(String raw) {
+    final text = raw.trim();
+    if (text.isEmpty) return true;
+    final dash = text.lastIndexOf("-");
+    if (dash == -1 || dash == text.length - 1) return false;
+    final genotype = text.substring(dash + 1).trim();
+    return genotype.contains(".");
+  }
+
+  _VariantFilterResult _filterNoCallVariants(List<String> rawVariants) {
+    final kept = <String>[];
+    var noCallCount = 0;
+    for (final raw in rawVariants) {
+      final text = raw.trim();
+      if (text.isEmpty) continue;
+      if (_isNoCallVariant(text)) {
+        noCallCount += 1;
+        continue;
+      }
+      kept.add(text);
+    }
+    return _VariantFilterResult(
+      variants: kept,
+      originalCount: rawVariants.length,
+      noCallCount: noCallCount,
+    );
+  }
+
   Future<_LlmReply> _runCloudLlm({
     required String userQuery,
     _EdgeResult? edgeResult,
@@ -629,21 +703,25 @@ class ChatController extends ChangeNotifier {
           userQuery: userQuery,
           edgeResult: edgeResult,
         );
+    final filteredVariants = _filterNoCallVariants(llmInput.variants);
     if (llmDebugMode && kDebugMode) {
       debugPrint(
-        "[GeneLLM] llm_input topic=${llmInput.topic} variants=${llmInput.variants.length} yuguard=${llmInput.yuguard == null ? "null" : "set"}",
+        "[GeneLLM] llm_input topic=${llmInput.topic} variants=${llmInput.variants.length} used_variants=${filteredVariants.variants.length} no_call=${filteredVariants.noCallCount} yuguard=${llmInput.yuguard == null ? "null" : "set"}",
       );
-      final previewCount =
-          llmInput.variants.length >= 5 ? 5 : llmInput.variants.length;
+      final previewCount = filteredVariants.variants.length >= 5
+          ? 5
+          : filteredVariants.variants.length;
       debugPrint(
-        "[GeneLLM] variants_preview=${llmInput.variants.take(previewCount).toList()}",
+        "[GeneLLM] variants_preview=${filteredVariants.variants.take(previewCount).toList()}",
       );
     }
     final result = await api.askLlm(
       userId: llmInput.userId,
       aggregatedQuery: llmInput.query,
-      topic: llmInput.topic,
-      variants: llmInput.variants,
+      topic: _normalizeTopicForCloud(llmInput.topic),
+      variants: filteredVariants.variants,
+      originalVariantCount: filteredVariants.originalCount,
+      noCallCount: filteredVariants.noCallCount,
       yuguard: llmInput.yuguard,
       debugMode: llmDebugMode,
     );
@@ -676,6 +754,9 @@ class ChatController extends ChangeNotifier {
     final snpListText = variantsRaw is List
         ? const JsonEncoder.withIndent("  ").convert(variantsRaw)
         : "[]";
+    final variantInputCount = payload["variant_input_count"]?.toString() ?? "-";
+    final variantUsedCount = payload["variant_used_count"]?.toString() ?? "-";
+    final noCallCount = payload["no_call_count"]?.toString() ?? "-";
     final yuguardState = payload["yuguard"] == null ? "null" : "set";
     return "[LLM REQUEST]\n"
         "status: $status\n"
@@ -683,6 +764,9 @@ class ChatController extends ChangeNotifier {
         "user_id: $userId\n"
         "query: $query\n"
         "topic: $topicText\n"
+        "variant_input_count: $variantInputCount\n"
+        "variant_used_count: $variantUsedCount\n"
+        "no_call_count: $noCallCount\n"
         "SNP_list: $snpListText\n"
         "yuguard: $yuguardState";
   }
@@ -839,11 +923,16 @@ class ChatController extends ChangeNotifier {
         notifyListeners();
         await _save();
 
-        final cloudReply = await _runCloudLlm(
-          userQuery: trimmed,
-          edgeResult: null,
-          overrideInput: llmInput,
-        );
+        late final _LlmReply cloudReply;
+        try {
+          cloudReply = await _runCloudLlm(
+            userQuery: trimmed,
+            edgeResult: null,
+            overrideInput: llmInput,
+          );
+        } catch (e) {
+          throw Exception(_buildCloudFailureText(e));
+        }
         final reply = _LlmReply(
           answer: cloudReply.answer,
           source: "CLOUD",
@@ -907,10 +996,15 @@ class ChatController extends ChangeNotifier {
         notifyListeners();
         await _save();
 
-        final cloudReply = await _runCloudLlm(
-          userQuery: trimmed,
-          edgeResult: edgeResult,
-        );
+        late final _LlmReply cloudReply;
+        try {
+          cloudReply = await _runCloudLlm(
+            userQuery: trimmed,
+            edgeResult: edgeResult,
+          );
+        } catch (e) {
+          throw Exception(_buildCloudFailureText(e));
+        }
         final reply = _LlmReply(
           answer: cloudReply.answer,
           source: "CLOUD",
@@ -938,12 +1032,15 @@ class ChatController extends ChangeNotifier {
         throw Exception("BLE 未成功取得結果，且目前關閉 cloud fallback。");
       }
 
-      final reply = await (() async {
-        return _runCloudLlm(
+      late final _LlmReply reply;
+      try {
+        reply = await _runCloudLlm(
           userQuery: trimmed,
           edgeResult: null,
         );
-      })();
+      } catch (e) {
+        throw Exception(_buildCloudFailureText(e));
+      }
 
       _appendLlmRequestDebug(reply.requestLog);
       final finalAnswer = _formatFinalAnswer(reply);
