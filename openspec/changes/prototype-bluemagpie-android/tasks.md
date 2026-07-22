@@ -3,6 +3,7 @@
 - [x] 1.1 [P] 依「Keep the PoC behind compile-time and runtime flags」建立預設關閉的 `bluemagpiePoc` Gradle/CMake/Flutter flags，使 source 或模型不存在時正式路徑仍可建置；以 flag-off `flutter analyze`、`flutter test` 與 `flutter build apk --debug --target-platform android-arm64` 驗證。
 - [x] 1.2 [P] 依「Reuse Flutter channels through a dedicated plugin」以 TDD 建立 `BlueMagpieTts` typed API、MethodChannel/EventChannel names、state/result/error models與 fake channel，先讓 `test/bluemagpie_tts_test.dart` 失敗再通過，驗證 stable serialization與idempotent cancel/release。
 - [x] 1.3 完成「Isolated Android PoC entry」，新增 developer-only診斷頁顯示probe、model、lifecycle、metrics並只在Android ARM64 debug + flag enabled時可達；以widget tests驗證支援與不支援平台的navigation差異。
+- [x] 1.4 將 flag-on debug PoC 隔離為 `com.example.geneapp.bluemagpie` 並使用獨立顯示名稱與 app-specific model directory，避免真機測試覆蓋既有 `com.example.geneapp`；以 APK application ID 與雙套件共存檢查驗證。
 
 ## 2. 模型安全與 Android worker
 

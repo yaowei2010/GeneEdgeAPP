@@ -39,6 +39,8 @@ flutter build apk --debug --target-platform android-arm64 \
 ```
 
 產物：`build/app/outputs/flutter-apk/app-debug.apk`。預設的一般 build 仍關閉 PoC。
+flag-on debug APK 使用獨立 application ID `com.example.geneapp.bluemagpie`，手機上會顯示
+為「GeneEdge 藍鵲測試」，可與既有 `com.example.geneapp` 同時安裝且不共用 App 資料。
 
 ## 安裝模型到手機
 
@@ -46,11 +48,11 @@ flutter build apk --debug --target-platform android-arm64 \
 
 ```sh
 adb install -r build/app/outputs/flutter-apk/app-debug.apk
-adb shell mkdir -p /sdcard/Android/data/com.example.geneapp/files/models/bluemagpie
+adb shell mkdir -p /sdcard/Android/data/com.example.geneapp.bluemagpie/files/models/bluemagpie
 adb push BlueMagpie-Barbet-1B-q4_k_m.gguf \
-  /sdcard/Android/data/com.example.geneapp/files/models/bluemagpie/
+  /sdcard/Android/data/com.example.geneapp.bluemagpie/files/models/bluemagpie/
 adb push BlueMagpie-AudioVAE.gguf \
-  /sdcard/Android/data/com.example.geneapp/files/models/bluemagpie/
+  /sdcard/Android/data/com.example.geneapp.bluemagpie/files/models/bluemagpie/
 ```
 
 若系統封鎖直接寫入 `Android/data`，可用 Android Studio 的 Device Explorer 將兩個
@@ -77,6 +79,13 @@ adb push BlueMagpie-AudioVAE.gguf \
 
 尚未完成的是實體手機上的模型載入、中文 WAV、播放與 20 次 soak；因此目前不能把
 PoC 宣告為產品可用。Vulkan fallback 也尚未驗收，第一輪請使用 CPU。
+
+### 真機安裝紀錄（2026-07-22）
+
+- Pixel 10 Pro、Android 16 / SDK 36、ARM64。
+- `com.example.geneapp` 與 `com.example.geneapp.bluemagpie` 已驗證可同時安裝。
+- 測試 App cold start 成功；手機端兩個 GGUF 的 byte size 與 SHA-256 均符合 manifest。
+- 中文合成、播放與重複 soak 仍待使用者在診斷頁觸發及觀察。
 
 ## 來源與限制
 
