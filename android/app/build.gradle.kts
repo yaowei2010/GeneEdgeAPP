@@ -5,6 +5,15 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+val blueMagpiePocProperty = providers.gradleProperty("bluemagpiePoc").orNull
+val blueMagpiePocRequested = when (blueMagpiePocProperty) {
+    null, "false" -> false
+    "true" -> true
+    else -> throw GradleException(
+        "bluemagpiePoc must be exactly 'true' or 'false'; got '$blueMagpiePocProperty'."
+    )
+}
+
 android {
     namespace = "com.example.geneapp"
     compileSdk = flutter.compileSdkVersion
@@ -17,6 +26,10 @@ android {
 
     kotlinOptions {
         jvmTarget = JavaVersion.VERSION_17.toString()
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     defaultConfig {
@@ -47,12 +60,29 @@ android {
 
     buildTypes {
         debug {
+            buildConfigField(
+                "boolean",
+                "BLUEMAGPIE_POC_ENABLED",
+                blueMagpiePocRequested.toString()
+            )
+            externalNativeBuild {
+                cmake {
+                    arguments += "-DGENEEDGE_BLUEMAGPIE_POC=${if (blueMagpiePocRequested) "ON" else "OFF"}"
+                }
+            }
             ndk {
                 abiFilters.clear()
                 abiFilters.add("arm64-v8a")
             }
         }
         release {
+            // This diagnostic runtime is never compiled into a release build.
+            buildConfigField("boolean", "BLUEMAGPIE_POC_ENABLED", "false")
+            externalNativeBuild {
+                cmake {
+                    arguments += "-DGENEEDGE_BLUEMAGPIE_POC=OFF"
+                }
+            }
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")

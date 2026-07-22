@@ -1,10 +1,15 @@
 import "dart:async";
+import "package:flutter/foundation.dart";
 import "package:flutter/material.dart";
 import "package:google_fonts/google_fonts.dart";
 import "package:provider/provider.dart";
 import "package:uuid/uuid.dart";
 import "api_service.dart";
 import "ble_gateway.dart";
+import "bluemagpie_poc_availability.dart";
+import "bluemagpie_poc_config.dart";
+import "bluemagpie_poc_page.dart";
+import "bluemagpie_tts.dart";
 import "chat_controller.dart";
 import "chat_room_page.dart";
 import "local_payload_loader.dart";
@@ -408,6 +413,23 @@ class _SplashGateState extends State<_SplashGate> {
   bool _ready = false;
   Timer? _timer;
 
+  bool get _showBlueMagpiePoc => BlueMagpiePocAvailability.canShowEntry(
+        featureEnabled: BlueMagpiePocConfig.enabled,
+        debugMode: kDebugMode,
+        platform: defaultTargetPlatform,
+        // The Android app currently ships only arm64-v8a. Native probe still
+        // verifies the runtime ABI before any model work starts.
+        isArm64: true,
+      );
+
+  void _openBlueMagpiePoc() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => BlueMagpiePocPage(tts: BlueMagpieTts()),
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -447,7 +469,10 @@ class _SplashGateState extends State<_SplashGate> {
         topic: ChatTopic.alcohol,
         snpList: const [],
       )..load(),
-      child: ChatRoomPage(onLogout: widget.onLogout),
+      child: ChatRoomPage(
+        onLogout: widget.onLogout,
+        onOpenBlueMagpiePoc: _showBlueMagpiePoc ? _openBlueMagpiePoc : null,
+      ),
     );
   }
 }

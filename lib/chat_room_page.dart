@@ -8,8 +8,13 @@ import "models.dart";
 
 class ChatRoomPage extends StatefulWidget {
   final VoidCallback? onLogout;
+  final VoidCallback? onOpenBlueMagpiePoc;
 
-  const ChatRoomPage({super.key, this.onLogout});
+  const ChatRoomPage({
+    super.key,
+    this.onLogout,
+    this.onOpenBlueMagpiePoc,
+  });
 
   @override
   State<ChatRoomPage> createState() => _ChatRoomPageState();
@@ -354,6 +359,12 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
             : () {
                 Navigator.of(context).pop();
                 widget.onLogout!();
+              },
+        onOpenBlueMagpiePoc: widget.onOpenBlueMagpiePoc == null
+            ? null
+            : () {
+                Navigator.of(context).pop();
+                widget.onOpenBlueMagpiePoc!();
               },
       ),
       body: GestureDetector(
@@ -896,12 +907,14 @@ class _AppDrawer extends StatelessWidget {
   final TopicPresentation Function(ChatTopic topic) topicFor;
   final VoidCallback onChooseTopic;
   final VoidCallback? onLogout;
+  final VoidCallback? onOpenBlueMagpiePoc;
 
   const _AppDrawer({
     required this.controller,
     required this.topicFor,
     required this.onChooseTopic,
     this.onLogout,
+    this.onOpenBlueMagpiePoc,
   });
 
   @override
@@ -1028,6 +1041,13 @@ class _AppDrawer extends StatelessWidget {
                 subtitle: "Show or hide technical diagnostics",
                 onTap: controller.toggleLlmDebugMode,
               ),
+              if (onOpenBlueMagpiePoc != null)
+                _DrawerAction(
+                  icon: Icons.record_voice_over_rounded,
+                  title: "藍鵲 TTS 測試",
+                  subtitle: "開發者限定：中文文字轉語音",
+                  onTap: onOpenBlueMagpiePoc,
+                ),
               if (controller.hasBleGateway && !controller.useLocalComputeMode)
                 _DrawerAction(
                   icon: Icons.devices_rounded,

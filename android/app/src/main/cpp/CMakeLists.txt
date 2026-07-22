@@ -2,6 +2,14 @@ cmake_minimum_required(VERSION 3.10)
 
 project(geneedge_whisper)
 
+option(
+    GENEEDGE_BLUEMAGPIE_POC
+    "Compile the Android-only BlueMagpie diagnostic runtime"
+    OFF
+)
+
+message(STATUS "GeneEdge BlueMagpie PoC enabled: ${GENEEDGE_BLUEMAGPIE_POC}")
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
