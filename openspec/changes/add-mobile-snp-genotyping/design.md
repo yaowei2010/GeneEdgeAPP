@@ -13,6 +13,22 @@ Non-Goals：手機內部 combined 資料、複製完整 USB 資料、FASTQ 建�
 
 ## Decisions
 
+### 聊天室離線流程與API JSON
+
+追加範圍為同一聊天室的明確「USB離線SNP」模式。一般聊天送出仍沿用既有行為；離線模式的送出按鈕帶入當下文字、健康主題映射的set與已選USB來源，呼叫原生離線工作而非sendUserMessage的網路路徑。插入後呈現來源狀態／掃描與首次SAF授權，不因插入自動運算或送出。多組來源需選擇；沒有資料的主題仍可一般聊天，但離線模式不可執行。busy鎖定主題／模式／debug，取消、拔除、來源／主題變更、登出均使舊job卡片與可複製JSON失效。聊天室卡片是暫存UI資料，不寫入現有聊天歷史持久化，不影響TTS。保留獨立頁為進階工具，不要求聊天室流程導頁。
+
+新增純Dart serializer只轉換C結果，不重算模型。完成後產生可選取／顯式複製的API request JSON，與`ApiService.askLlm`一致：user_id取llmUserId非空值否則threadId；query固定捕捉送出文字；topic使用原有中文映射；SNP_list、snp_list、variants為相同的唯一rsID-GT列表；variant_input_count為位點數、variant_used_count為成功輸出數、no_call_count為未判定位點數、yuguard=null，不捏造生理資料。字串GT保留REF優先、ALT依A/C/G/T順序的固定allele順序（例如REF=T、ALT=C的0/1轉TC），不包含斜線；no-call不放進三個variants列表，但完整locus診斷保留。重複rsID跨不同座標拒絕輸出，不任意取第一筆。酒精完整結果77位點，143是輸入參考筆數，不是輸出位點數。診斷包schemaVersion=2另含job、set、模型、77列、debugTiming（僅啟用時）；API request不混入診斷欄位／URI／序列／read ID。無論debug是否開啟都可產生API JSON，不自動保存／HTTP／LLM呼叫。
+
+### 同位點聯合統計模型
+
+新增獨立`dm-locus-research-v1`，不把已完成`bb-research-v1`的143個獨立posterior相乘、不加總重複REF深度、不挑最大單列posterior。Dirichlet-multinomial為beta-binomial的多分類延伸，使用四類互斥read計數；這是本專案k-mer證據研究模型，不是GATK或品質分數模型。參考方法：https://academic.oup.com/bioinformatics/article/33/15/2322/3071980。
+
+依header的rsID／chrom／position分組；所有同位點query須有相同REF與正規化後相同300bp側翼，若不同則整批INVALID_QUERY，不把不同上下文當同位點。每位點從同一側翼生成A/C/G/T中心查詢（參考asset143筆保持不改），共同稀疏read表取得四等位support。每個read、方向、查詢位置只計一次，背景coverage在四個等位查詢共用；每方向沿用coverage>58才納入支持。正反向支持合併後唯一非零最大support歸入一個鹼基，最大值並列歸ambiguous，皆零歸coverageOnly；每read在位點只貢獻一次，total=sum(A,C,G,T)+ambiguous+coverageOnly，effectiveDepth=sum(A,C,G,T)。保留原100萬候選上限、seek／posting驗證、取消與高頻桶回報，不能使用143列的aggregate重建互斥計數。只逐位點保留read表，read ID不離開C、不輸出logcat；R1/R2仍是不同read而非獨立fragment，相關性為模型限制。
+
+四鹼基排序以REF為allele0，其餘A/C/G/T固定排序；枚舉所有i<=j共10候選（包含ALT/ALT）。dosage d_b取0、0.5、1，均值mu_b=d_b*(1-epsilon)+(1-d_b)*epsilon/3；總和為1，concentration=1/rho-1，alpha_b=mu_b*concentration。略去所有genotype共用多項係數，logLikelihood=lgamma(concentration)-lgamma(n+concentration)+sum_b[lgamma(count_b+alpha_b)-lgamma(alpha_b)]，加log prior後log-sum-exp正規化。預设epsilon=.01、rho=.02、10個均等prior、minDepth=10、minPosterior=.99，calibrated=false；範圍沿用現有epsilon/rho限制、priors正且總和1容差1e-9、n<=100萬。n=0、低深度、最大posterior<門檻、最高log score在1e-12內並列皆no-call，輸出reason；數值／參數非法是錯誤，不fallback。bestGenotype是模型下估計非確認真實GT，診斷保留10候選posterior、最佳posterior及最佳對次佳log score差。沒有BQ不阻擋此count模型，但固定錯誤率不視為校準，需已知GT驗證。
+
+Android run新增明確locus模式，舊query模式契約保持；locus完成事件77列，進度77/77、另標示來源143參考筆數，每列含rsID／chrom／position、四類counts、allele排序、GT indices／actualGenotype、posterior、reason／config／modelVersion。debug按位點重新量測實際I/O、count及joint model，不加總舊143列時間；沿用0.01ms驗證。Flutter捕捉job的query／topic／set／source快照，不用目前聊天室選單重標結果。
+
 ### USB 直接讀取
 
 重用 USB 掛載識別、SAF 授權及同目錄雙檔發現，但另設計算資料來源，不能以匯入成功作為前提。有兩組雙檔時列出資料夾讓使用者選擇，禁止自動猜測。唯讀 openFileDescriptor 後以 seek/pread 探測隨機存取，不支援則明確失敗，不改用寫入授權或完整複製。native 複製描述符取得所有權，所有結束路徑關閉。
@@ -43,13 +59,16 @@ Flutter 顯示可選取報告及「複製 debug 結果」按鈕，逐 SNP 顯示
 
 以 `lib/snp_sets.dart` 管理明確 set catalog，而不是直接把 `ChatTopic` 名稱當成可運算 panel。目錄沿用原本頁面的酒精代謝、藥物反應、記憶認知、心理狀態、高血壓、血脂管理、營養建議標籤；本次只有酒精可選，其餘顯示「尚未提供 SNP set」並禁用，未來提供實際資料才啟用。預設模式為主題 set、預選 alcohol-set143-k150-v1；每個 catalog entry 包含 id、label、assetPath、expectedCount、來源描述與版本。單 SNP 與外部 FASTA 移到進階模式，保留現有驗證及匯入能力，避免把原本手動表單當主要操作。
 
-酒精來源是 `/Volumes/Untitled/MXIC_NCKU_demo_v4/ref_dataset/alcohol.set143.k150.fasta`，原始 SHA-256 為 `0bc77278d47ddcf41f1bbf4ef6f879d47f86c2d06791c0e29c5c0812a72b73f9`。實作時將原始 bytes 內建於 `assets/snp_sets/alcohol.set143.k150.fasta`，在 `pubspec.yaml` 宣告；不採用 gene_annotated 版本，不使用 remoteV3 的另一份資料。沿用 `SnpQuery.parseFasta` 解析最後兩欄 REF／ALT，保留 rsID／chromosome／position 組成的既有 locus id 與檔案順序，例如 `rs1229984_4_100239319`，不擅自反轉等位方向。完整解析後需恰143筆、不重複、全部301bp ACGT、中心為 REF 或 ALT且兩者不同；任一失敗整組不可開始並顯示載入錯誤，禁止改用單 SNP 或另一個 set 作 silent fallback。
+酒精來源是 `/Volumes/Untitled/MXIC_NCKU_demo_v4/ref_dataset/alcohol.set143.k150.fasta`，原始 SHA-256 為 `0bc77278d47ddcf41f1bbf4ef6f879d47f86c2d06791c0e29c5c0812a72b73f9`。實作時將原始 bytes 內建於 `assets/snp_sets/alcohol.set143.k150.fasta`，在 `pubspec.yaml` 宣告；不採用 gene_annotated 版本，不使用 remoteV3 的另一份資料。實際資料有77個不同位點、143筆等位查詢，內建set以完整header作query id（例如 `rs1229984_4_100239319_T_C`）區分同位點的不同ALT，REF／ALT與序列／順序不變。沿用 `SnpQuery.parseFasta` 並增加明確的 alleleQualifiedIds 選項，舊手動模式的id與重複檢查不變；內建set需恰143個唯一完整query id及77個位點、全部301bp ACGT、中心為 REF 或 ALT且兩者不同，任一失敗整組不可開始。每筆僅做獨立二等位查詢，不合併成多等位聯合GT、不把143列稱為143獨立SNP，UI明示此限制。
 
 asset 載入顯示 loading／ready／error 與 set 名稱、版本、筆數，只有 ready 且 USB來源已選才可執行。選單、進階模式及輸入在 busy 時禁用；載入請求帶 generation，晚到舊載入不可覆蓋新模式。切換 set／模式時清除舊結果與 debug 報告，job 固定捕捉 setId／setLabel／setVersion及143筆 queries，完成頁與 debug 報告標明此次實際運算 set，不能拿目前選單重新標記舊結果。手動模式標明單 SNP 或自訂 FASTA，不冒充內建酒精。
 
 完整驗收路徑為：選酒精→asset驗證143筆→USB唯讀授權／pair選取→C SNP計數→獨立C genotyping→143列結果／no-call及debug階段时间。Widget／controller 測試用 fake platform 驗證傳入的143筆與實際asset相同、完成列數及set版本；native／JNI fixture 仍負責驗證核心計數及模型，不能用fake平台冒充實機USB。Pixel實測记录手機、set版本、USB來源、完成／錯誤、计時、取消與拔除；未知真實GT不當正確性證據，需用人工已知fixture或獨立核對。離線功能不送出 HTTP／LLM 呼叫；本次「整個流程」驗收界線是 LLM 之前，原本AI URL API不變。
 
 ## Implementation Contract
+
+- 追加優先契約：聊天室使用上述聯合locus模式與API JSON。已完成獨立頁的143列二等位行為保留為進階／legacy模式；以下query契約與既有驗收不代表新locus功能已完成。API傳輸、自動持久化、BQ推造、臨床校準、舊USB匯入、TTS不在追加範圍。
+- 追加驗收：C共同fixture核對四類去重、跨ALT/方向不增深度、ALT/ALT與無支持的鹼基、非法上下文；模型與独立高精度參考比對10候選posterior，驗證對稱／參數／no-call。Flutter fake聊天室測試選酒精→文字送出→77/77→唯一位點JSON、debug on/off結果相同、清空／取消／拔除stale guard，禁止HTTP；API payload tests精確核對askLlm欄位、REF=T/ALT=C轉TC、no-call排除及重複rsID拒絕。實機與fixture分開紀錄。
 
 - Source：只接受目前掛載的 removable USB 且已授權 SAF tree 下的同目錄精確双檔，拒絕 primary 手機儲存與非授權 URI；IDX 大小必須為536870912，IDs 必須非空且四 bytes 對齊。資料來源變更、USB 移除、Activity detach 均取消工作並使現有結果失效。
 - Engine：snp_engine 接收兩個唯讀可 seek 描述符、locus 與取消 callback，回傳 total/ref/alt/ambiguous/coverageOnly/skippedBuckets 或錯誤；total=ref+alt+ambiguous+coverageOnly。不修改來源。
@@ -71,6 +90,8 @@ asset 載入顯示 loading／ready／error 與 set 名稱、版本、筆數，�
 - 主題有名稱但尚無對應資料 → catalog 明示不可用；本次僅內建使用者指定酒精參考panel，不把AI主題誤當資料來源。
 
 ## Migration Plan
+
+聊天室／locus程式修改前，再將目前已安裝可用的set／debug版及限定相關規格Git備份到遠端codex/分支，核對SHA，不混入其他功能。新增模式而非覆寫legacy模型，回退可重建備份APK並install -r，不清除手機資料。
 
 先備份現有版本到 Git，再新增獨立函式庫與頁面；現有功能不遷移。若需要回退，使用備份 commit 重建 APK，不清除 USB 或使用者資料。
 

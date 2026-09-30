@@ -20,6 +20,7 @@ dependencies:
   speech_to_text: ^7.1.0
   google_fonts: ^6.2.1
   path_provider: ^2.1.5
+  crypto: ^3.0.7
 
 dev_dependencies:
   flutter_test:
@@ -38,3 +39,4 @@ flutter:
   assets:
     - icon.jpeg
     - assets/mock/local_payload.json
+    - assets/snp_sets/alcohol.set143.k150.fasta

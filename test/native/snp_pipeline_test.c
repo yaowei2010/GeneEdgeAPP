@@ -2,6 +2,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include "../../android/app/src/main/cpp/snp/snp_engine.h"
 #include "../../android/app/src/main/cpp/snp/genotype_model.h"
+#include "../../android/app/src/main/cpp/snp/snp_timing.h"
 #include <assert.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -41,6 +42,16 @@ int main(void) {
     assert(genotype_call(counts.ref,counts.alt,&config,&result)==GENOTYPE_OK);
     assert(result.effective_depth==40&&result.genotype==1&&result.posterior[1]>=0.99);
     assert(!result.calibrated&&strcmp(result.model_version,"bb-research-v1")==0);
+    snp_timing timing; snp_counts measured;
+    assert(snp_query_timed(idx,ids,ref,'A','C',&measured,NULL,NULL,&timing)==SNP_OK);
+    assert(memcmp(&counts,&measured,sizeof counts)==0);
+    assert(timing.query_ns>=timing.io_ns && timing.io_ns>0);
+    snp_stage_timing stages;
+    assert(snp_split_timing(12000000,7000000,2000000,15000000,&stages)==SNP_OK);
+    assert(stages.io_ms==7 && stages.count_ms==5 && stages.genotype_ms==2);
+    assert(stages.overhead_ms==1 && stages.total_ms==15);
+    assert(snp_split_timing(1,2,0,3,&stages)==SNP_IO_ERROR);
+    assert(snp_split_timing(12,7,2,13,&stages)==SNP_IO_ERROR);
     /* Ambiguous and coverage-only evidence must never inflate model depth. */
     assert(genotype_call(4,4,&config,&result)==GENOTYPE_OK);
     assert(result.effective_depth==8&&result.genotype==-1);

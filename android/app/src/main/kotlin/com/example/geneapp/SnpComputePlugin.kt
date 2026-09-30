@@ -9,6 +9,7 @@ import android.os.storage.StorageVolume
 import android.provider.DocumentsContract
 import android.system.Os
 import android.system.OsConstants
+import android.util.Log
 import com.example.geneapp.snp.*
 import com.example.geneapp.usb.*
 import io.flutter.embedding.engine.plugins.FlutterPlugin
@@ -38,6 +39,8 @@ class SnpComputePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallH
     private var jobId: String? = null
     private var jobCompleted = 0
     private var jobTotal = 0
+    private var jobDebug = false
+    @Volatile private var jobStarted = 0L
     private var sources = emptyMap<String, SnpSource>()
     private var selected: String? = null
     private var picker: MethodChannel.Result? = null
@@ -45,7 +48,7 @@ class SnpComputePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallH
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context?, i: Intent?) { invalidate("USB_REMOVED"); sources = emptyMap() }
     }
-    private external fun nativeCompute(idx: Int, ids: Int, sequence: String, ref: String, alt: String, token: Long): String
+    private external fun nativeCompute(idx: Int, ids: Int, sequence: String, ref: String, alt: String, token: Long, debug: Boolean): String
     // Called from JNI in the worker. No UI state is accessed from that thread.
     fun isCancelled(token: Long): Boolean = !gate.current(token) || Thread.currentThread().isInterrupted
     companion object { init { System.loadLibrary("geneedge_snp") } }
@@ -81,8 +84,15 @@ class SnpComputePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallH
     override fun onListen(args: Any?, eventSink: EventChannel.EventSink) { sink = eventSink }
     override fun onCancel(args: Any?) { invalidate("CANCELLED"); sink = null }
     private fun invalidate(code: String) {
+        val diagnostic = interrupted("invalidated")
         gate.invalidate(); opening?.cancel(); sourceRevision++; selected = null
-        emit(mapOf("status" to "invalidated", "errorCode" to code))
+        emit(mapOf("status" to "invalidated", "errorCode" to code) + diagnostic)
+    }
+    private fun interrupted(status: String): Map<String, Any?> {
+        val active = jobId?.toLongOrNull()?.let { gate.current(it) } == true
+        val elapsed = SnpDebug.elapsed(jobDebug,jobStarted,SystemClock.elapsedRealtimeNanos(),active) ?: return emptyMap()
+        SnpDebug.logTerminal(true,status,elapsed)?.let { Log.d("GeneEdgeSnp",it) }
+        return mapOf("elapsedMs" to elapsed)
     }
     private fun emit(data: Map<String, Any?>) { if (attached) sink?.success(
         mapOf("jobId" to jobId, "completed" to jobCompleted, "total" to jobTotal) + data + ("revision" to ++revision)) }
@@ -142,7 +152,7 @@ class SnpComputePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallH
                     invalidate("CANCELLED"); selected = id; result.success(snapshot())
                 }
                 "run" -> run(call, result)
-                "cancel" -> { gate.invalidate(); opening?.cancel(); emit(mapOf("status" to "cancelled")); result.success(null) }
+                "cancel" -> { val diagnostic = interrupted("cancelled"); gate.invalidate(); opening?.cancel(); emit(mapOf("status" to "cancelled") + diagnostic); result.success(null) }
                 else -> result.notImplemented()
             }
         } catch(e: Exception) { result.error(failure(e), "SNP operation rejected", null) }
@@ -195,37 +205,49 @@ class SnpComputePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallH
             SnpQuery(m["id"] as? String ?: "", m["sequence"] as? String ?: "", m["ref"] as? String ?: "", m["alt"] as? String ?: "")
         }
         if (!SnpContracts.validQueries(queries)) throw SnpFailure("INVALID_QUERY")
+        val debug = SnpDebug.enabled(call.argument<Any?>("debugEnabled"))
         val token = gate.start(); val jobId = token.toString()
-        this.jobId = jobId; jobCompleted = 0; jobTotal = queries.size
+        this.jobId = jobId; jobCompleted = 0; jobTotal = queries.size; jobDebug = debug; jobStarted = 0L
         result.success(mapOf("jobId" to jobId))
         emit(mapOf("jobId" to jobId, "status" to "running", "completed" to 0, "total" to queries.size))
         worker.execute {
+            val began = if (debug) SystemClock.elapsedRealtimeNanos() else 0L
+            jobStarted = began
             val signal = CancellationSignal(); opening = signal
             try {
                 val resolver = context.contentResolver
                 if (isCancelled(token)) throw SnpFailure("CANCELLED")
                 if (!valid(Uri.parse(id)) || !authorized(Uri.parse(id))) throw SnpFailure("USB_REMOVED")
+                val setupStart = if (debug) SystemClock.elapsedRealtimeNanos() else 0L
                 resolver.openFileDescriptor(Uri.parse(source.idx.uri), "r", signal)?.use { idx ->
                     resolver.openFileDescriptor(Uri.parse(source.ids.uri), "r", signal)?.use { ids ->
                         val idxSize = Os.fstat(idx.fileDescriptor).st_size; val idsSize = Os.fstat(ids.fileDescriptor).st_size
                         if (!SnpContracts.validSizes(idxSize, idsSize)) throw SnpFailure("INVALID_FORMAT")
                         try { Os.lseek(idx.fileDescriptor, 0, OsConstants.SEEK_CUR); Os.lseek(ids.fileDescriptor, 0, OsConstants.SEEK_CUR) }
                         catch (_: Exception) { throw SnpFailure("NOT_SEEKABLE") }
+                        val setupMs = if (debug) (SystemClock.elapsedRealtimeNanos()-setupStart)/1e6 else 0.0
                         val rows = mutableListOf<Map<String, Any?>>()
                         queries.forEachIndexed { index, q ->
                             if (isCancelled(token)) throw SnpFailure("CANCELLED")
-                            val data = JSONObject(nativeCompute(idx.fd, ids.fd, q.sequence, q.ref, q.alt, token))
+                            val data = JSONObject(nativeCompute(idx.fd, ids.fd, q.sequence, q.ref, q.alt, token, debug))
                             if (data.has("errorCode")) throw SnpFailure(data.getString("errorCode"))
                             rows.add(jsonMap(data) + mapOf("id" to q.id, "refAllele" to q.ref, "altAllele" to q.alt,
                                 "sourceId" to id, "sourceLabel" to source.folder.name))
                             main.post { if (gate.current(token)) { jobCompleted = index + 1; emit(mapOf("jobId" to jobId, "status" to "running")) } }
                         }
-                        main.post { if (gate.current(token)) emit(mapOf("jobId" to jobId, "status" to "completed", "completed" to queries.size, "total" to queries.size, "results" to rows)) }
+                        val event = mapOf("jobId" to jobId, "status" to "completed", "completed" to queries.size, "total" to queries.size, "results" to rows)
+                        val timing = if (debug) mapOf("debugTiming" to SnpDebug.batch(rows,setupMs,(SystemClock.elapsedRealtimeNanos()-began)/1e6)) else emptyMap()
+                        // Logging is outside the measured result-construction boundary.
+                        if (debug && gate.current(token)) {
+                            rows.forEach { SnpDebug.logRow(true,it)?.let { line -> Log.d("GeneEdgeSnp",line) } }
+                            Log.d("GeneEdgeSnp",JSONObject(mapOf("jobId" to jobId,"status" to "completed") + timing).toString())
+                        }
+                        main.post { if (gate.current(token)) emit(event + timing) }
                     } ?: throw IOException()
                 } ?: throw IOException()
             } catch(e: Throwable) {
                 val code = when(e) { is OutOfMemoryError -> "RESOURCE_LIMIT"; is Exception -> failure(e); else -> "IO_ERROR" }
-                main.post { if (gate.current(token)) emit(mapOf("jobId" to jobId, "status" to "error", "errorCode" to code)) }
+                main.post { if (gate.current(token)) emit(mapOf("jobId" to jobId, "status" to "error", "errorCode" to code) + interrupted("error")) }
             } finally {
                 opening = null
                 main.post { gate.finish(token) }

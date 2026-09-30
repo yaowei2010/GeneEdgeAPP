@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
@@ -17,6 +18,32 @@ String _text(Map<Object?, Object?> map, String key) {
   final v = map[key];
   if (v is! String || v.isEmpty) throw FormatException('Invalid $key');
   return v;
+}
+
+double _milliseconds(Object? value) {
+  if (value is! num || !value.isFinite || value < 0) {
+    throw const FormatException('Invalid elapsed time');
+  }
+  return value.toDouble();
+}
+
+Map<String, double> _timing(Object? value, List<String> parts, String total) {
+  final raw = _map(value);
+  final parsed = {
+    for (final key in [...parts, total]) key: _milliseconds(raw[key])
+  };
+  if ((parts.fold<double>(0, (sum, key) => sum + parsed[key]!) - parsed[total]!)
+          .abs() >
+      .01) {
+    throw const FormatException('Inconsistent timing breakdown');
+  }
+  return Map.unmodifiable(parsed);
+}
+
+class SnpInputIdentity {
+  const SnpInputIdentity(this.id, this.label, this.version);
+  final String id, label, version;
+  Map<String, String> toMap() => {'id': id, 'label': label, 'version': version};
 }
 
 class SnpQuery {
@@ -46,7 +73,8 @@ class SnpQuery {
   }
   Map<String, Object?> toMap() =>
       {'id': id, 'sequence': sequence, 'ref': ref, 'alt': alt};
-  static List<SnpQuery> parseFasta(String input) {
+  static List<SnpQuery> parseFasta(String input,
+      {bool alleleQualifiedIds = false}) {
     if (input.length > 2 * 1024 * 1024) {
       throw const FormatException('FASTA 超過大小上限');
     }
@@ -60,7 +88,9 @@ class SnpQuery {
           RegExp(r'^(.+)_([ACGTacgt])_([ACGTacgt])$').firstMatch(header);
       if (match == null) throw const FormatException('FASTA 標頭須為 >標識_REF_ALT');
       final q = SnpQuery.validated(
-          id: match[1]!,
+          id: alleleQualifiedIds
+              ? '${match[1]}_${match[2]!.toUpperCase()}_${match[3]!.toUpperCase()}'
+              : match[1]!,
           sequence: seq.toString(),
           ref: match[2]!,
           alt: match[3]!);
@@ -108,6 +138,7 @@ class SnpResult {
       this.altAllele,
       this.sourceId,
       this.sourceLabel);
+  Map<String, double>? debugTiming;
   final String id,
       gt,
       modelVersion,
@@ -170,7 +201,7 @@ class SnpResult {
             1e-6) {
       throw const FormatException('Invalid priors');
     }
-    return SnpResult._(
+    final result = SnpResult._(
         _text(m, 'id'),
         total,
         ref,
@@ -188,7 +219,42 @@ class SnpResult {
         altAllele,
         _text(m, 'sourceId'),
         _text(m, 'sourceLabel'));
+    if (m.containsKey('debugTiming')) {
+      result.debugTiming = _timing(
+          m['debugTiming'],
+          ['ioMs', 'countMs', 'genotypeMs', 'nativeOverheadMs'],
+          'nativeTotalMs');
+    }
+    return result;
   }
+  Map<String, Object?> toDebugMap() => {
+        'id': id,
+        'refAllele': refAllele,
+        'altAllele': altAllele,
+        'total': total,
+        'ref': ref,
+        'alt': alt,
+        'ambiguous': ambiguous,
+        'coverageOnly': coverageOnly,
+        'skippedBuckets': skippedBuckets,
+        'effectiveDepth': effectiveDepth,
+        'gt': gt,
+        'posterior': posterior,
+        'noCallReason': noCallReason,
+        'modelVersion': modelVersion,
+        'calibrated': false,
+        'parameters': {
+          for (final key in [
+            'epsilon',
+            'rho',
+            'priors',
+            'minDepth',
+            'minPosterior'
+          ])
+            key: parameters[key]
+        },
+        if (debugTiming != null) 'debugTiming': debugTiming,
+      };
 }
 
 abstract interface class SnpComputePlatform {
@@ -196,7 +262,8 @@ abstract interface class SnpComputePlatform {
   Future<Object?> sources();
   Future<Object?> requestAccess(String volumeId);
   Future<Object?> selectSource(String sourceId);
-  Future<Object?> run(String sourceId, List<SnpQuery> queries);
+  Future<Object?> run(String sourceId, List<SnpQuery> queries,
+      {bool debugEnabled = false});
   Future<void> cancel();
   Future<String?> pickPanel();
 }
@@ -215,9 +282,11 @@ class MethodChannelSnpComputePlatform implements SnpComputePlatform {
   Future<Object?> selectSource(String sourceId) =>
       methods.invokeMethod('selectSource', {'sourceId': sourceId});
   @override
-  Future<Object?> run(String sourceId, List<SnpQuery> queries) =>
+  Future<Object?> run(String sourceId, List<SnpQuery> queries,
+          {bool debugEnabled = false}) =>
       methods.invokeMethod('run', {
         'sourceId': sourceId,
+        if (debugEnabled) 'debugEnabled': true,
         'queries': queries.map((q) => q.toMap()).toList()
       });
   @override
@@ -241,6 +310,43 @@ class SnpComputeController extends ChangeNotifier {
   int completed = 0, total = 0, _revision = -1, _generation = 0;
   List<Map<Object?, Object?>> sources = const [], volumes = const [];
   List<SnpResult> results = const [];
+  bool _debugEnabled = false, _jobDebug = false;
+  bool get debugEnabled => _debugEnabled;
+  Map<String, double>? batchTiming;
+  String? debugReport, _cancelledJobId;
+  double? elapsedMs;
+  SnpInputIdentity? resultInput;
+  SnpInputIdentity _jobInput =
+      const SnpInputIdentity('single', '單 SNP', 'custom');
+  List<SnpQuery> _queries = const [];
+  void setDebugEnabled(bool value) {
+    if (busy || _disposed) return;
+    _debugEnabled = value;
+    _notify();
+  }
+
+  void _clearOutput() {
+    results = const [];
+    batchTiming = null;
+    debugReport = null;
+    elapsedMs = null;
+    resultInput = null;
+  }
+
+  void clearResults() {
+    if (busy || _disposed) return;
+    _generation++;
+    _jobId = null;
+    _cancelledJobId = null;
+    _early.clear();
+    _clearOutput();
+    completed = 0;
+    total = 0;
+    errorCode = null;
+    status = 'idle';
+    _notify();
+  }
+
   StreamSubscription<Object?>? _sub;
   bool _disposed = false, _pending = false, _started = false;
   final List<Object?> _early = [];
@@ -264,7 +370,7 @@ class SnpComputeController extends ChangeNotifier {
     _generation++;
     _jobId = null;
     _early.clear();
-    results = const [];
+    _clearOutput();
     status = 'error';
     errorCode = e is PlatformException ? e.code : 'INVALID_FORMAT';
     _pending = false;
@@ -298,7 +404,7 @@ class SnpComputeController extends ChangeNotifier {
     if (selected != selectedSourceId) {
       _generation++;
       _jobId = null;
-      results = const [];
+      _clearOutput();
       if (busy) {
         unawaited(_platform.cancel().catchError((Object _) {}));
         status = 'invalidated';
@@ -333,7 +439,7 @@ class SnpComputeController extends ChangeNotifier {
 
   Future<void> selectSource(String id) async {
     if (busy) await cancel();
-    results = const [];
+    _clearOutput();
     try {
       final v = await _platform.selectSource(id);
       if (!_disposed) _applySources(v);
@@ -343,7 +449,9 @@ class SnpComputeController extends ChangeNotifier {
   }
 
   Future<String?> pickPanel() => _platform.pickPanel();
-  Future<void> run(List<SnpQuery> queries) async {
+  Future<void> run(List<SnpQuery> queries,
+      {SnpInputIdentity input =
+          const SnpInputIdentity('single', '單 SNP', 'custom')}) async {
     if (!supported || _disposed || busy) return;
     if (selectedSourceId == null ||
         queries.isEmpty ||
@@ -352,17 +460,22 @@ class SnpComputeController extends ChangeNotifier {
       throw const FormatException('請選擇 USB 資料來源並提供有效查詢');
     }
     final generation = ++_generation;
+    _jobDebug = _debugEnabled;
+    _jobInput = input;
+    _queries = List.unmodifiable(queries);
+    _cancelledJobId = null;
     _pending = true;
     _jobId = null;
     _early.clear();
-    results = const [];
+    _clearOutput();
     status = 'running';
     completed = 0;
     total = queries.length;
     errorCode = null;
     _notify();
     try {
-      final response = _map(await _platform.run(selectedSourceId!, queries));
+      final response = _map(await _platform.run(selectedSourceId!, _queries,
+          debugEnabled: _jobDebug));
       if (_disposed || generation != _generation) return;
       _jobId = _text(response, 'jobId');
       _pending = false;
@@ -390,7 +503,10 @@ class SnpComputeController extends ChangeNotifier {
         _jobId = null;
         _pending = false;
         _early.clear();
-        results = const [];
+        _clearOutput();
+        if (_jobDebug && m.containsKey('elapsedMs')) {
+          elapsedMs = _milliseconds(m['elapsedMs']);
+        }
         status = state;
         errorCode = m['errorCode'] as String?;
         selectedSourceId = null;
@@ -402,6 +518,18 @@ class SnpComputeController extends ChangeNotifier {
         _early.add(value);
         return;
       }
+      if (state == 'cancelled' &&
+          status == 'cancelled' &&
+          _cancelledJobId != null &&
+          m['jobId'] == _cancelledJobId) {
+        if (_jobDebug && m.containsKey('elapsedMs')) {
+          elapsedMs = _milliseconds(m['elapsedMs']);
+        }
+        _revision = revision;
+        _cancelledJobId = null;
+        _notify();
+        return;
+      }
       if (_jobId == null || m['jobId'] != _jobId) return;
       if (!['running', 'completed', 'cancelled', 'error'].contains(state)) {
         throw const FormatException('Invalid status');
@@ -411,14 +539,70 @@ class SnpComputeController extends ChangeNotifier {
       final parsed = state == 'completed'
           ? ((m['results'] as List).map(SnpResult.fromMap).toList())
           : <SnpResult>[];
-      if (state == 'completed' && (done != all || parsed.length != all)) {
+      if (all != total ||
+          (state == 'completed' && (done != all || parsed.length != all))) {
         throw const FormatException('Incomplete results');
+      }
+      Map<String, double>? timing;
+      if (state == 'completed') {
+        for (var i = 0; i < parsed.length; i++) {
+          final r = parsed[i], q = _queries[i];
+          if (r.id != q.id ||
+              r.refAllele != q.ref ||
+              r.altAllele != q.alt ||
+              r.sourceId != selectedSourceId) {
+            throw const FormatException('Result does not match query/source');
+          }
+        }
+        if (_jobDebug) {
+          timing = _timing(
+              m['debugTiming'],
+              ['setupIoMs', 'queryIoMs', 'countMs', 'genotypeMs', 'overheadMs'],
+              'totalMs');
+          for (final pair in [
+            ('queryIoMs', 'ioMs'),
+            ('countMs', 'countMs'),
+            ('genotypeMs', 'genotypeMs')
+          ]) {
+            double sum = 0;
+            for (final row in parsed) {
+              if (row.debugTiming == null) {
+                throw const FormatException('Missing native timing');
+              }
+              sum += row.debugTiming![pair.$2]!;
+            }
+            if ((sum - timing[pair.$1]!).abs() > .01) {
+              throw const FormatException('Invalid batch timing sum');
+            }
+          }
+        } else if (m.containsKey('debugTiming') ||
+            parsed.any((r) => r.debugTiming != null)) {
+          throw const FormatException('Unexpected debug payload');
+        }
       }
       _revision = revision;
       status = state;
       completed = done;
       total = all;
       results = List.unmodifiable(parsed);
+      batchTiming = timing;
+      debugReport = null;
+      resultInput = state == 'completed' ? _jobInput : null;
+      elapsedMs = _jobDebug && m.containsKey('elapsedMs')
+          ? _milliseconds(m['elapsedMs'])
+          : null;
+      if (_jobDebug && state == 'completed') {
+        debugReport = const JsonEncoder.withIndent('  ').convert({
+          'schemaVersion': 1,
+          'jobId': _jobId,
+          'status': state,
+          'completed': done,
+          'total': all,
+          'inputSet': _jobInput.toMap(),
+          'debugTiming': timing,
+          'results': parsed.map((r) => r.toDebugMap()).toList(),
+        });
+      }
       errorCode = m['errorCode'] as String?;
       if (state != 'running') _jobId = null;
       _notify();
@@ -430,10 +614,11 @@ class SnpComputeController extends ChangeNotifier {
   Future<void> cancel() async {
     if (_disposed || !supported) return;
     _generation++;
+    _cancelledJobId = _jobId;
     _jobId = null;
     _pending = false;
     _early.clear();
-    results = const [];
+    _clearOutput();
     status = 'cancelled';
     _notify();
     try {

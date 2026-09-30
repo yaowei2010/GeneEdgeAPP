@@ -16,14 +16,25 @@
 
 ## 4. Debug 結果與分段計時
 
-- [ ] 4.1 在任何 debug 或 SNP set UI／asset 程式修改前，將目前 SNP 版本及本次規格以限定檔案的 Git commit 備份到遠端 codex/ 分支；以 git status、commit 檔案清單及 git ls-remote 驗證沒有夾帶其他功能，遠端 SHA 與本地一致，記錄可回復位置。
-- [ ] 4.2 以失敗測試先實作 Opt-in debug results and stage timing／Debug 結果與分段計時 的 C／JNI 量測：實際 fstat／pread I/O 累計、扣除 I/O 的 countMs、獨立 genotypeMs 與 native overhead／total；debug 關閉略過逐讀取計時。依賴4.1，以可控制時鐘／合成資料驗證 12ms query含7ms I/O→5ms計數，以及 `scripts/test_snp_native.sh` 驗證真實 fixture 非負時間、分解一致與 on/off 計數及 GT 相同。
-- [ ] 4.3 接續4.2更新 SnpComputePlugin 的 debugEnabled 快照、setupIoMs、queryIoMs／countMs／genotypeMs 加總、batch overheadMs／totalMs 與中斷 elapsedMs；GeneEdgeSnp logcat 只在啟用時列印有界且 escaped 的結果／時間，不含序列、read ID 或 URI。以 Android 單元測試驗證22ms人工分解、預設关闭、日誌3000 UTF-8 bytes上限、隱私欄位、失敗／取消摘要及 stale guard。
-- [ ] 4.4 接續4.3以 Flutter controller／widget 失敗測試新增預設關閉、busy不可切換的 debug 開關，驗證run快照、有限非負時間與0.01ms分解容差；顯示逐 SNP 及整體階段、schemaVersion=1可選取報告與顯式複製按钮／敏感資料提示。以 `test/snp_compute_test.dart`、`test/snp_compute_page_test.dart` 驗證顯示／剪貼簿、不輸出原始資料、非法時間拒絕、取消及來源變更清空報告，舊無debug呼叫仍可運作。
-- [ ] 4.5 接續4.4更新 `docs/mobile-snp-genotyping.md` 的 debug 測試操作、elapsed邊界、provider／cache影響及量測開銷；執行 native／Flutter／Android 測試、flutter analyze與ARM64 APK build，記錄結果與既有失敗。Pixel無法連線時保留3.3未完成；可連線時在3.3實測debug開關、每階段顯示／複製、logcat及取消／拔除，不能冒充已安裝或實測。
+- [x] 4.1 在任何 debug 或 SNP set UI／asset 程式修改前，將目前 SNP 版本及本次規格以限定檔案的 Git commit 備份到遠端 codex/ 分支；以 git status、commit 檔案清單及 git ls-remote 驗證沒有夾帶其他功能，遠端 SHA 與本地一致，記錄可回復位置。
+- [x] 4.2 以失敗測試先實作 Opt-in debug results and stage timing／Debug 結果與分段計時 的 C／JNI 量測：實際 fstat／pread I/O 累計、扣除 I/O 的 countMs、獨立 genotypeMs 與 native overhead／total；debug 關閉略過逐讀取計時。依賴4.1，以可控制時鐘／合成資料驗證 12ms query含7ms I/O→5ms計數，以及 `scripts/test_snp_native.sh` 驗證真實 fixture 非負時間、分解一致與 on/off 計數及 GT 相同。
+- [x] 4.3 接續4.2更新 SnpComputePlugin 的 debugEnabled 快照、setupIoMs、queryIoMs／countMs／genotypeMs 加總、batch overheadMs／totalMs 與中斷 elapsedMs；GeneEdgeSnp logcat 只在啟用時列印有界且 escaped 的結果／時間，不含序列、read ID 或 URI。以 Android 單元測試驗證22ms人工分解、預設关闭、日誌3000 UTF-8 bytes上限、隱私欄位、失敗／取消摘要及 stale guard。
+- [x] 4.4 接續4.3以 Flutter controller／widget 失敗測試新增預設關閉、busy不可切換的 debug 開關，驗證run快照、有限非負時間與0.01ms分解容差；顯示逐 SNP 及整體階段、schemaVersion=1可選取報告與顯式複製按钮／敏感資料提示。以 `test/snp_compute_test.dart`、`test/snp_compute_page_test.dart` 驗證顯示／剪貼簿、不輸出原始資料、非法時間拒絕、取消及來源變更清空報告，舊無debug呼叫仍可運作。
+- [x] 4.5 接續4.4更新 `docs/mobile-snp-genotyping.md` 的 debug 測試操作、elapsed邊界、provider／cache影響及量測開銷；執行 native／Flutter／Android 測試、flutter analyze與ARM64 APK build，記錄結果與既有失敗。Pixel無法連線時保留3.3未完成；可連線時在3.3實測debug開關、每階段顯示／複製、logcat及取消／拔除，不能冒充已安裝或實測。
 
 ## 5. SNP set 選單與整個離線流程
 
-- [ ] 5.1 依賴4.1備份，先以 `test/snp_sets_test.dart` 定義 Topic SNP set selection and bundled alcohol panel／SNP set 選單與內建酒精資料 契約，將指定USB原始酒精參考FASTA內建於 `assets/snp_sets/alcohol.set143.k150.fasta` 並宣告pubspec asset；實作catalog、hash與143筆完整驗證、原始REF／ALT及locus id保留，其他主題標示不可用。測試驗證原始SHA-256、143筆301bp、rs1229984 locus、壞資料整組拒絕與無個人combined asset。
-- [ ] 5.2 接續5.1及4.4，以widget失敗測試將SNP頁主要輸入改為主題set選單並預選酒精，顯示loading／ready／error、筆數與版本；保留進階單SNP／外部FASTA。controller固定捕捉set job快照，切換清空結果與debug報告、busy禁用切換、stale載入不覆蓋新模式；在 `test/snp_compute_page_test.dart`、`test/snp_compute_test.dart` 驗證傳入完整143筆與asset一致、其他主題不可執行及缺USB／載入錯誤不可開始。
-- [ ] 5.3 接續5.2實作 End-to-end offline alcohol workflow verification 的自動化驗收及文件：fake platform驗證選酒精→143筆查詢→143/143進度→結果／no-call與debug分段時間及set版本，並驗證沒有自動HTTP／LLM呼叫；與native／JNI fixture結果分開記錄。執行全套Flutter測試、analyze及ARM64 build，`docs/mobile-snp-genotyping.md` 提供Pixel USB整流程、取消／拔除、結果對照測試步驟；物理USB驗收仍由3.3記錄，安裝成功不等於正確性驗證。
+- [x] 5.1 依賴4.1備份，先以 `test/snp_sets_test.dart` 定義 Topic SNP set selection and bundled alcohol panel／SNP set 選單與內建酒精資料 契約，將指定USB原始酒精參考FASTA內建於 `assets/snp_sets/alcohol.set143.k150.fasta` 並宣告pubspec asset；實作catalog、hash與143筆完整驗證、原始REF／ALT及locus id保留，其他主題標示不可用。測試驗證原始SHA-256、143筆301bp、rs1229984 locus、壞資料整組拒絕與無個人combined asset。
+- [x] 5.2 接續5.1及4.4，以widget失敗測試將SNP頁主要輸入改為主題set選單並預選酒精，顯示loading／ready／error、筆數與版本；保留進階單SNP／外部FASTA。controller固定捕捉set job快照，切換清空結果與debug報告、busy禁用切換、stale載入不覆蓋新模式；在 `test/snp_compute_page_test.dart`、`test/snp_compute_test.dart` 驗證傳入完整143筆與asset一致、其他主題不可執行及缺USB／載入錯誤不可開始。
+- [x] 5.3 接續5.2實作 End-to-end offline alcohol workflow verification 的自動化驗收及文件：fake platform驗證選酒精→143筆查詢→143/143進度→結果／no-call與debug分段時間及set版本，並驗證沒有自動HTTP／LLM呼叫；與native／JNI fixture結果分開記錄。執行全套Flutter測試、analyze及ARM64 build，`docs/mobile-snp-genotyping.md` 提供Pixel USB整流程、取消／拔除、結果對照測試步驟；物理USB驗收仍由3.3記錄，安裝成功不等於正確性驗證。
+
+## 6. 聊天室與每位點聯合判定
+
+- [ ] 6.1 在本組程式修改前，將目前可用set／debug版及相關規格限定檔案Git備份到遠端codex/分支；核對commit檔案清單與git ls-remote SHA並記錄回復位置，不夾帶其他功能。
+- [ ] 6.2 依賴6.1，以失敗測試實作 Joint locus evidence and statistical genotyping／同位點聯合統計模型 的C共同四等位read表；驗證REF／側翼一致、四類互斥計數、跨ALT與方向去重、ambiguous／coverageOnly、candidate上限、取消、I/O錯誤及64bit位置，於test/native/snp_locus_test.c核對已知fixture，不用舊aggregate計數替代。
+- [ ] 6.3 接續6.2，以test/native/locus_genotype_model_test.c失敗測試實作獨立C dm-locus-research-v1：10候選Dirichlet-multinomial、均等prior、posterior與最大後驗／no-call；與獨立數值參考核對，驗證100C/100G選C/G、低深度、並列、鹼基置換對稱、極端計數與非法參數，保留legacy beta-binomial tests。
+- [ ] 6.4 接續6.3，新增JNI／Android明確locus run模式及77列契約、原生四類counts／posterior／實際GT／模型版本與逐位點debug；保留舊run格式與取消／FD所有權。以真正JNI fixture、Android契約tests及debug on/off對照驗證77位點事件、有限時間分解與stale guard。
+- [ ] 6.5 接續6.4，實作snp_sets分組及controller的query／topic／set／source job快照、locus完整性驗證、77/77、debug與失效清除；以test/snp_compute_test.dart及test/snp_sets_test.dart驗證143原始記錄→77同側翼位點、REF錯誤拒絕、取消／來源變更／晚到事件不可還原舊結果。
+- [ ] 6.6 接續6.5，以test/snp_api_payload_test.dart失敗測試實作 Unique-locus API JSON export／聊天室離線流程與API JSON 的純serializer：askLlm精確欄位與三份相同variants、GT鹼基轉換、每位點唯一、重複rsID跨座標拒絕、77/70/7計數、diagnostic schemaVersion=2，不含序列／read ID／URI，debug off仍可產生但無網路／自動保存。
+- [ ] 6.7 接續6.6，以聊天室widget失敗測試實作 Chat-integrated offline USB computation：原有主題映射set、明確USB離線模式、輸入文字送出C、來源／權限、載入／錯誤、進度／取消、暫存結果／JSON與分段計時卡片／顯式複製。驗證同頁完成77/77、一般聊天仍原路徑、busy鎖定、未提供set禁用、拔除／登出清空、禁止HTTP／持久化／自動TTS，不要求導頁。
+- [ ] 6.8 接續6.7，更新docs/mobile-snp-genotyping.md的聊天室操作、JSON範例、joint模型與legacy區分、校準限制及Pixel測試；執行native／JNI、Flutter全套test／analyze、Android相關tests、ARM64 build，分開紀錄fixture與真實USB驗收。未執行實機測試不得勾選3.3。

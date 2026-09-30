@@ -11,7 +11,15 @@ import java.nio.file.Path;
 public final class SnpComputePlugin {
     private boolean cancelled;
     private boolean callbackThrows;
-    private native String nativeCompute(int idx, int ids, String sequence, String ref, String alt, long token);
+    private native String nativeCompute(int idx, int ids, String sequence, String ref, String alt, long token, boolean debug);
+    private String nativeCompute(int idx, int ids, String sequence, String ref, String alt, long token) {
+        return nativeCompute(idx, ids, sequence, ref, alt, token, false);
+    }
+    private static double time(String json, String name) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\\"" + name + "\\\":([0-9.eE+\\-]+)").matcher(json);
+        require(m.find()); double value = Double.parseDouble(m.group(1));
+        require(Double.isFinite(value) && value >= 0); return value;
+    }
     public boolean isCancelled(long token) {
         if (callbackThrows) throw new IllegalStateException("test callback");
         return cancelled || token != 1;
@@ -65,6 +73,11 @@ public final class SnpComputePlugin {
             require(result.contains("\"ambiguous\":1") && result.contains("\"coverageOnly\":1"));
             require(result.contains("\"effectiveDepth\":40") && result.contains("\"gt\":\"0/1\""));
             require(result.contains("\"noCallReason\":null") && result.contains("\"parameters\":{") && !result.contains("NaN"));
+            require(!result.contains("debugTiming"));
+            String debug = plugin.nativeCompute(ifd, dfd, ref, "A", "C", 1, true);
+            require(debug.contains("\"debugTiming\":{") && debug.startsWith(result.substring(0, result.length()-1)));
+            require(Math.abs(time(debug,"nativeTotalMs") - time(debug,"ioMs") - time(debug,"countMs")
+                - time(debug,"genotypeMs") - time(debug,"nativeOverheadMs")) < 0.01);
             // Caller descriptors remain valid after each native call.
             require(idx.length() == 536870912 && ids.length() > 4294967296L);
             System.out.println("JNI + C engine + C genotype integration passed");

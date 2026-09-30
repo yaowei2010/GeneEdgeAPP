@@ -6,6 +6,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <time.h>
 
 #define IDX_BYTES UINT64_C(536870912)
 #define SNP_CANDIDATE_LIMIT 1000000u
@@ -45,9 +46,20 @@ static int grow(table *t) {
     for(size_t i=0;i<t->capacity;i++)if(t->slots[i].last_coverage)*locate(&next,t->slots[i].id)=t->slots[i];
     free(t->slots);*t=next;return SNP_OK;
 }
-static int read_at(int fd,unsigned char *buffer,size_t bytes,uint64_t offset) {
+static uint64_t tick(snp_timing *timing) {
+    if(!timing)return 0;
+    struct timespec now;
+    if(clock_gettime(CLOCK_MONOTONIC,&now)!=0){timing->clock_failed=1;return 0;}
+    return (uint64_t)now.tv_sec*UINT64_C(1000000000)+(uint64_t)now.tv_nsec;
+}
+static void io_end(snp_timing *timing,uint64_t start) {
+    if(timing){uint64_t end=tick(timing);if(end<start)timing->clock_failed=1;else timing->io_ns+=end-start;}
+}
+static int read_at(int fd,unsigned char *buffer,size_t bytes,uint64_t offset,snp_timing *timing) {
     while(bytes){
-        ssize_t n=pread(fd,buffer,bytes,(off_t)offset);
+        uint64_t start=tick(timing);
+        ssize_t n=pread(fd,buffer,bytes,(off_t)offset);int saved_errno=errno;
+        io_end(timing,start);errno=saved_errno;
         if(n<0){if(errno==EINTR)continue;return errno==ESPIPE?SNP_NOT_SEEKABLE:SNP_IO_ERROR;}
         if(n==0)return SNP_IO_ERROR;
         buffer+=n;bytes-=(size_t)n;offset+=(uint64_t)n;
@@ -62,18 +74,22 @@ const char *snp_error_code(int e) {
     case SNP_IO_ERROR:return "IO_ERROR";case SNP_RESOURCE_LIMIT:return "RESOURCE_LIMIT";
     case SNP_CANCELLED:return "CANCELLED";default:return "IO_ERROR";}
 }
-int snp_query(int idxfd,int idsfd,const char *sequence,char ref,char alt,
-              snp_counts *out,snp_cancel_fn cancelled,void *context) {
+static int query_impl(int idxfd,int idsfd,const char *sequence,char ref,char alt,
+              snp_counts *out,snp_cancel_fn cancelled,void *context,snp_timing *timing) {
     if(!out)return SNP_INVALID_QUERY;
     memset(out,0,sizeof *out);
     if(!sequence||!base(ref)||!base(alt)||ref==alt)return SNP_INVALID_QUERY;
     for(int i=0;i<301;i++)if(!base(sequence[i]))return SNP_INVALID_QUERY;
     if(sequence[301] || (sequence[150]!=ref && sequence[150]!=alt))return SNP_INVALID_QUERY;
     if(cancelled && cancelled(context))return SNP_CANCELLED;
-    if(lseek(idxfd,0,SEEK_CUR)<0 || lseek(idsfd,0,SEEK_CUR)<0)
+    uint64_t start=tick(timing);
+    int seek_failed=lseek(idxfd,0,SEEK_CUR)<0 || lseek(idsfd,0,SEEK_CUR)<0;int saved_errno=errno;
+    io_end(timing,start);errno=saved_errno;
+    if(seek_failed)
         return errno==ESPIPE?SNP_NOT_SEEKABLE:SNP_IO_ERROR;
     struct stat is,ds;
-    if(fstat(idxfd,&is)||fstat(idsfd,&ds))return SNP_IO_ERROR;
+    start=tick(timing);int stat_failed=fstat(idxfd,&is)||fstat(idsfd,&ds);io_end(timing,start);
+    if(stat_failed)return SNP_IO_ERROR;
     if(is.st_size!=(off_t)IDX_BYTES||ds.st_size<=0||ds.st_size%4)return SNP_INVALID_FORMAT;
     const uint64_t postings=(uint64_t)ds.st_size/4;
     char sequences[2][2][302];
@@ -90,7 +106,7 @@ int snp_query(int idxfd,int idsfd,const char *sequence,char ref,char alt,
         const int overlap=position<=150 && position+12>=150;
         for(int allele=0;allele<(overlap?2:1);allele++){
             if(cancelled && cancelled(context)){error=SNP_CANCELLED;goto done;}
-            error=read_at(idxfd,bucket,8,(uint64_t)hash(sequences[orientation][allele]+position)*8);
+            error=read_at(idxfd,bucket,8,(uint64_t)hash(sequences[orientation][allele]+position)*8,timing);
             if(error)goto done;
             uint32_t packed=decode(bucket+4),count=packed&0xffffffu;
             uint64_t offset=decode(bucket)|((uint64_t)(packed>>24)<<32);
@@ -99,7 +115,7 @@ int snp_query(int idxfd,int idsfd,const char *sequence,char ref,char alt,
             for(uint32_t start=0;start<count;){
                 if(cancelled && cancelled(context)){error=SNP_CANCELLED;goto done;}
                 uint32_t take=count-start;if(take>BATCH)take=BATCH;
-                error=read_at(idsfd,batch,(size_t)take*4,(offset+start)*4);if(error)goto done;
+                error=read_at(idsfd,batch,(size_t)take*4,(offset+start)*4,timing);if(error)goto done;
                 for(uint32_t j=0;j<take;j++){
                     uint32_t id=decode(batch+j*4);candidate *c=locate(&t,id);
                     if(!c->last_coverage){
@@ -132,4 +148,21 @@ int snp_query(int idxfd,int idsfd,const char *sequence,char ref,char alt,
     }
 done:
     free(t.slots);if(error==SNP_OK)*out=result;return error;
+}
+int snp_query_timed(int idxfd,int idsfd,const char *sequence,char ref,char alt,
+              snp_counts *out,snp_cancel_fn cancelled,void *context,snp_timing *timing) {
+    if(timing)memset(timing,0,sizeof *timing);
+    uint64_t start=tick(timing);
+    int status=query_impl(idxfd,idsfd,sequence,ref,alt,out,cancelled,context,timing);
+    if(timing){
+        uint64_t end=tick(timing);
+        if(end<start || end-start<timing->io_ns)timing->clock_failed=1;
+        else timing->query_ns=end-start;
+        if(timing->clock_failed){if(out)memset(out,0,sizeof *out);return SNP_IO_ERROR;}
+    }
+    return status;
+}
+int snp_query(int idxfd,int idsfd,const char *sequence,char ref,char alt,
+              snp_counts *out,snp_cancel_fn cancelled,void *context) {
+    return snp_query_timed(idxfd,idsfd,sequence,ref,alt,out,cancelled,context,NULL);
 }

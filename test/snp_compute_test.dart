@@ -43,6 +43,8 @@ Map<String, Object?> result() => {
 
 class FakeSnpPlatform implements SnpComputePlatform {
   int runCalls = 0;
+  bool lastDebug = false;
+  List<SnpQuery> lastQueries = [];
   final stream = StreamController<Object?>.broadcast(sync: true);
   Future<Object?> Function()? onRun;
   @override
@@ -55,8 +57,11 @@ class FakeSnpPlatform implements SnpComputePlatform {
   @override
   Future<Object?> selectSource(String id) async => sourcesMap();
   @override
-  Future<Object?> run(String id, List<SnpQuery> queries) async {
+  Future<Object?> run(String id, List<SnpQuery> queries,
+      {bool debugEnabled = false}) async {
     runCalls++;
+    lastDebug = debugEnabled;
+    lastQueries = List.of(queries);
     return onRun == null ? {'jobId': 'job1'} : await onRun!();
   }
 
@@ -68,6 +73,143 @@ class FakeSnpPlatform implements SnpComputePlatform {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test(
+      'cancel reports measured elapsed but never accepts late debug completion',
+      () async {
+    final p = FakeSnpPlatform();
+    final c = SnpComputeController(platform: p, supported: true);
+    await c.start();
+    c.setDebugEnabled(true);
+    await c.run([query]);
+    await c.cancel();
+    p.stream.add({
+      'jobId': 'job1',
+      'revision': 2,
+      'status': 'cancelled',
+      'completed': 0,
+      'total': 1,
+      'elapsedMs': 4.0
+    });
+    expect(c.elapsedMs, 4.0);
+    expect(c.debugReport, isNull);
+    expect(c.batchTiming, isNull);
+    p.stream.add({
+      'jobId': 'job1',
+      'revision': 3,
+      'status': 'completed',
+      'completed': 1,
+      'total': 1,
+      'results': [result()]
+    });
+    expect(c.status, 'cancelled');
+    expect(c.results, isEmpty);
+    expect(c.debugReport, isNull);
+    p.stream.add({
+      'jobId': 'job1',
+      'revision': 4,
+      'status': 'invalidated',
+      'errorCode': 'USB_REMOVED',
+      'elapsedMs': 5.0
+    });
+    expect(c.status, 'invalidated');
+    expect(c.selectedSourceId, isNull);
+    expect(c.elapsedMs, 5.0);
+    c.dispose();
+    await p.stream.close();
+  });
+  test('debug snapshot prints safe results and non-overlapping stage times',
+      () async {
+    final p = FakeSnpPlatform();
+    final c = SnpComputeController(platform: p, supported: true);
+    expect(c.debugEnabled, false);
+    await c.start();
+    c.setDebugEnabled(true);
+    await c.run([query]);
+    c.setDebugEnabled(false);
+    expect(p.lastDebug, true);
+    expect(c.debugEnabled, true);
+    p.stream.add({
+      'jobId': 'job1',
+      'revision': 2,
+      'status': 'completed',
+      'completed': 1,
+      'total': 1,
+      'results': [
+        {
+          ...result(),
+          'debugTiming': {
+            'ioMs': 7.0,
+            'countMs': 5.0,
+            'genotypeMs': 2.0,
+            'nativeOverheadMs': 1.0,
+            'nativeTotalMs': 15.0
+          }
+        }
+      ],
+      'debugTiming': {
+        'setupIoMs': 3.0,
+        'queryIoMs': 7.0,
+        'countMs': 5.0,
+        'genotypeMs': 2.0,
+        'overheadMs': 5.0,
+        'totalMs': 22.0
+      }
+    });
+    expect(c.batchTiming!['totalMs'], 22.0);
+    expect(c.results.single.debugTiming!['countMs'], 5.0);
+    expect(c.debugReport, contains('"schemaVersion": 1'));
+    expect(c.debugReport, contains('"gt": "./."'));
+    expect(c.debugReport, isNot(contains('sourceId')));
+    expect(c.debugReport, isNot(contains(sequence)));
+    c.clearResults();
+    expect(c.debugReport, isNull);
+    expect(c.results, isEmpty);
+    c.dispose();
+    await p.stream.close();
+  });
+  test(
+      'debug rejects invalid timing, mismatched batch sum and missing instrumentation',
+      () async {
+    for (final bad in [-1.0, double.nan, double.infinity, 23.0, null]) {
+      final p = FakeSnpPlatform();
+      final c = SnpComputeController(platform: p, supported: true);
+      await c.start();
+      c.setDebugEnabled(true);
+      await c.run([query]);
+      p.stream.add({
+        'jobId': 'job1',
+        'revision': 2,
+        'status': 'completed',
+        'completed': 1,
+        'total': 1,
+        'results': [
+          {
+            ...result(),
+            'debugTiming': {
+              'ioMs': 7.0,
+              'countMs': 5.0,
+              'genotypeMs': 2.0,
+              'nativeOverheadMs': 1.0,
+              'nativeTotalMs': 15.0
+            }
+          }
+        ],
+        if (bad != null)
+          'debugTiming': {
+            'setupIoMs': 3.0,
+            'queryIoMs': 7.0,
+            'countMs': 5.0,
+            'genotypeMs': 2.0,
+            'overheadMs': 5.0,
+            'totalMs': bad
+          }
+      });
+      expect(c.errorCode, 'INVALID_FORMAT');
+      expect(c.debugReport, isNull);
+      c.dispose();
+      await p.stream.close();
+    }
+  });
   test('rejects missing provenance and invalid allele definitions', () {
     for (final key in ['refAllele', 'altAllele', 'sourceId', 'sourceLabel']) {
       final missing = Map<String, Object?>.of(result())..remove(key);
