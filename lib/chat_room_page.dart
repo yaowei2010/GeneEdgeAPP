@@ -1,3 +1,4 @@
+import "package:flutter/foundation.dart";
 import "package:flutter/material.dart";
 import "package:flutter_markdown/flutter_markdown.dart";
 import "package:provider/provider.dart";
@@ -5,37 +6,70 @@ import "package:speech_to_text/speech_recognition_result.dart";
 import "package:speech_to_text/speech_to_text.dart";
 import "chat_controller.dart";
 import "models.dart";
+import "usb_gene_dongle.dart";
+import "usb_gene_dongle_page.dart";
 
 class ChatRoomPage extends StatefulWidget {
   final VoidCallback? onLogout;
   final VoidCallback? onOpenBlueMagpiePoc;
+  final UsbGeneDongleController? usbGeneDongle;
 
   const ChatRoomPage({
     super.key,
     this.onLogout,
     this.onOpenBlueMagpiePoc,
+    this.usbGeneDongle,
   });
 
   @override
   State<ChatRoomPage> createState() => _ChatRoomPageState();
 }
 
-class _ChatRoomPageState extends State<ChatRoomPage> {
+class _ChatRoomPageState extends State<ChatRoomPage>
+    with WidgetsBindingObserver {
   final _textCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
   final _speech = SpeechToText();
   bool _speechReady = false;
   bool _isListening = false;
   bool _panelCollapsed = true;
+  UsbGeneDongleController? _usbGeneDongle;
+  bool _ownsUsbGeneDongle = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _usbGeneDongle = widget.usbGeneDongle;
+    if (_usbGeneDongle == null &&
+        !kIsWeb &&
+        defaultTargetPlatform == TargetPlatform.android) {
+      _usbGeneDongle = UsbGeneDongleController();
+      _ownsUsbGeneDongle = true;
+    }
+    _usbGeneDongle?.start();
     _initSpeech();
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _usbGeneDongle?.refresh();
+    }
+  }
+
+  void _openUsbGeneDongle() {
+    final controller = _usbGeneDongle;
+    if (controller == null) return;
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => UsbGeneDonglePage(controller: controller),
+    ));
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    if (_ownsUsbGeneDongle) _usbGeneDongle?.dispose();
     _speech.cancel();
     _textCtrl.dispose();
     _scrollCtrl.dispose();
@@ -365,6 +399,12 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
             : () {
                 Navigator.of(context).pop();
                 widget.onOpenBlueMagpiePoc!();
+              },
+        onOpenUsbGeneDongle: _usbGeneDongle == null
+            ? null
+            : () {
+                Navigator.of(context).pop();
+                _openUsbGeneDongle();
               },
       ),
       body: GestureDetector(
@@ -908,6 +948,7 @@ class _AppDrawer extends StatelessWidget {
   final VoidCallback onChooseTopic;
   final VoidCallback? onLogout;
   final VoidCallback? onOpenBlueMagpiePoc;
+  final VoidCallback? onOpenUsbGeneDongle;
 
   const _AppDrawer({
     required this.controller,
@@ -915,6 +956,7 @@ class _AppDrawer extends StatelessWidget {
     required this.onChooseTopic,
     this.onLogout,
     this.onOpenBlueMagpiePoc,
+    this.onOpenUsbGeneDongle,
   });
 
   @override
@@ -925,95 +967,49 @@ class _AppDrawer extends StatelessWidget {
       child: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(14),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Color(0x18335C7A),
-                          blurRadius: 12,
-                          offset: Offset(0, 5),
-                        ),
-                      ],
-                    ),
-                    clipBehavior: Clip.antiAlias,
-                    child: Image.asset("icon.jpeg", fit: BoxFit.cover),
-                  ),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          "GeneEdge",
-                          style: TextStyle(
-                            fontSize: 19,
-                            height: 1.1,
-                            fontWeight: FontWeight.w900,
-                            color: Color(0xFF102F3F),
-                          ),
-                        ),
-                        SizedBox(height: 2),
-                        Text(
-                          "NCKU pilot access",
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Color(0xFF607889),
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 22),
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: active.color.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(16),
-                  border:
-                      Border.all(color: active.color.withValues(alpha: 0.2)),
-                ),
-                child: Row(
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
                   children: [
                     Container(
-                      width: 38,
-                      height: 38,
+                      width: 44,
+                      height: 44,
                       decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(14),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x18335C7A),
+                            blurRadius: 12,
+                            offset: Offset(0, 5),
+                          ),
+                        ],
                       ),
-                      child: Icon(active.icon, color: active.color, size: 22),
+                      clipBehavior: Clip.antiAlias,
+                      child: Image.asset("icon.jpeg", fit: BoxFit.cover),
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
+                    const SizedBox(width: 12),
+                    const Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            "Current topic",
+                          Text(
+                            "GeneEdge",
                             style: TextStyle(
-                              fontSize: 11,
-                              color: Color(0xFF607889),
-                              fontWeight: FontWeight.w700,
+                              fontSize: 19,
+                              height: 1.1,
+                              fontWeight: FontWeight.w900,
+                              color: Color(0xFF102F3F),
                             ),
                           ),
-                          const SizedBox(height: 2),
+                          SizedBox(height: 2),
                           Text(
-                            active.label,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              color: Color(0xFF102F3F),
-                              fontWeight: FontWeight.w900,
+                            "NCKU pilot access",
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF607889),
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ],
@@ -1021,67 +1017,123 @@ class _AppDrawer extends StatelessWidget {
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(height: 18),
-              _DrawerAction(
-                icon: Icons.grid_view_rounded,
-                title: "Switch topic",
-                subtitle: "Choose another health scenario",
-                onTap: onChooseTopic,
-              ),
-              _DrawerAction(
-                icon: Icons.auto_awesome_rounded,
-                title: controller.geneLlmEnabled ? "GeneLLM on" : "GeneLLM off",
-                subtitle: "Tap to toggle LLM responses",
-                onTap: controller.toggleGeneLlm,
-              ),
-              _DrawerAction(
-                icon: Icons.bug_report_rounded,
-                title: controller.llmDebugMode ? "Debug on" : "Debug off",
-                subtitle: "Show or hide technical diagnostics",
-                onTap: controller.toggleLlmDebugMode,
-              ),
-              if (onOpenBlueMagpiePoc != null)
-                _DrawerAction(
-                  icon: Icons.record_voice_over_rounded,
-                  title: "藍鵲 TTS 測試",
-                  subtitle: "開發者限定：中文文字轉語音",
-                  onTap: onOpenBlueMagpiePoc,
-                ),
-              if (controller.hasBleGateway && !controller.useLocalComputeMode)
-                _DrawerAction(
-                  icon: Icons.devices_rounded,
-                  title: "BLE device",
-                  subtitle: controller.bleDeviceDisplayName,
-                  onTap: null,
-                ),
-              const Spacer(),
-              if (onLogout != null)
-                OutlinedButton.icon(
-                  onPressed: onLogout,
-                  icon: const Icon(Icons.logout_rounded),
-                  label: const Text("Log out"),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFF8F3D3D),
-                    side: const BorderSide(color: Color(0xFFE7CACA)),
-                    minimumSize: const Size.fromHeight(46),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
+                const SizedBox(height: 22),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: active.color.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(16),
+                    border:
+                        Border.all(color: active.color.withValues(alpha: 0.2)),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(active.icon, color: active.color, size: 22),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              "Current topic",
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Color(0xFF607889),
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              active.label,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                color: Color(0xFF102F3F),
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              const SizedBox(height: 12),
-              const Text(
-                "© 2026 National Cheng Kung University (NCKU), Taiwan.",
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 9,
-                  height: 1.2,
-                  color: Color(0xFF8EA1AD),
-                  fontWeight: FontWeight.w500,
+                const SizedBox(height: 18),
+                _DrawerAction(
+                  icon: Icons.grid_view_rounded,
+                  title: "Switch topic",
+                  subtitle: "Choose another health scenario",
+                  onTap: onChooseTopic,
                 ),
-              ),
-            ],
+                _DrawerAction(
+                  icon: Icons.auto_awesome_rounded,
+                  title:
+                      controller.geneLlmEnabled ? "GeneLLM on" : "GeneLLM off",
+                  subtitle: "Tap to toggle LLM responses",
+                  onTap: controller.toggleGeneLlm,
+                ),
+                _DrawerAction(
+                  icon: Icons.bug_report_rounded,
+                  title: controller.llmDebugMode ? "Debug on" : "Debug off",
+                  subtitle: "Show or hide technical diagnostics",
+                  onTap: controller.toggleLlmDebugMode,
+                ),
+                if (onOpenBlueMagpiePoc != null)
+                  _DrawerAction(
+                    icon: Icons.record_voice_over_rounded,
+                    title: "藍鵲 TTS 測試",
+                    subtitle: "開發者限定：中文文字轉語音",
+                    onTap: onOpenBlueMagpiePoc,
+                  ),
+                if (onOpenUsbGeneDongle != null)
+                  _DrawerAction(
+                    icon: Icons.usb_rounded,
+                    title: "USB / Gene dongle",
+                    subtitle: "自動偵測與匯入雙檔資料",
+                    onTap: onOpenUsbGeneDongle,
+                  ),
+                if (controller.hasBleGateway && !controller.useLocalComputeMode)
+                  _DrawerAction(
+                    icon: Icons.devices_rounded,
+                    title: "BLE device",
+                    subtitle: controller.bleDeviceDisplayName,
+                    onTap: null,
+                  ),
+                const SizedBox(height: 20),
+                if (onLogout != null)
+                  OutlinedButton.icon(
+                    onPressed: onLogout,
+                    icon: const Icon(Icons.logout_rounded),
+                    label: const Text("Log out"),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF8F3D3D),
+                      side: const BorderSide(color: Color(0xFFE7CACA)),
+                      minimumSize: const Size.fromHeight(46),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 12),
+                const Text(
+                  "© 2026 National Cheng Kung University (NCKU), Taiwan.",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 9,
+                    height: 1.2,
+                    color: Color(0xFF8EA1AD),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
