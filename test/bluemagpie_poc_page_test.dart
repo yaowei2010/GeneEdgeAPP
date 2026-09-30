@@ -85,7 +85,7 @@ class _PageFakeChannel implements BlueMagpieTtsChannel {
           'models': <Object?>[
             <String, Object?>{
               'id': 'barbet',
-              'fileName': 'BlueMagpie-Barbet-1B-q4_k_m.gguf',
+              'fileName': 'BlueMagpie-Barbet-1B-q8_0.gguf',
               'state': 'ready',
               'sizeBytes': 661000000,
             },

@@ -26,7 +26,7 @@ The PoC SHALL report whether the codec-enabled runtime is compiled, the pinned r
 The PoC MUST load model weights only from application-private internal no-backup storage and SHALL validate canonical path, readability, minimum free space, expected file size, and configured SHA-256 before native initialization. GGUF weights MUST NOT be stored in Git, APK, AAB, or cloud backup artifacts. Debug sideloading MAY stage files in `/data/local/tmp`, but native initialization MUST NOT read models from that staging path.
 
 #### Scenario: Valid model pair
-- **WHEN** `BlueMagpie-Barbet-1B-q4_k_m.gguf` and `BlueMagpie-AudioVAE.gguf` match configured sizes and SHA-256 values
+- **WHEN** the configured Barbet comparison model (`BlueMagpie-Barbet-1B-q8_0.gguf`) and `BlueMagpie-AudioVAE.gguf` match configured sizes and SHA-256 values
 - **THEN** the PoC marks both files valid and permits initialization
 
 #### Scenario: Missing or mismatched model

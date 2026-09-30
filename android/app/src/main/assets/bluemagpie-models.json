@@ -12,10 +12,10 @@
   "minimumFreeBytes": 536870912,
   "models": [
     {
-      "id": "barbet_q4_k_m",
-      "filename": "BlueMagpie-Barbet-1B-q4_k_m.gguf",
-      "byteSize": 693008576,
-      "sha256": "c8e66535e9ee3b114a9be05ac404cb9585910865718095a3914c2b51c4d5462f",
+      "id": "barbet_q8_0",
+      "filename": "BlueMagpie-Barbet-1B-q8_0.gguf",
+      "byteSize": 1162038464,
+      "sha256": "4fd4ec9b2269c6bad19431adefab01d4dec2c6e7e45c3756dd4714b0c5202b3b",
       "provenanceUrl": "https://github.com/OpenFormosa/Barbet"
     },
     {

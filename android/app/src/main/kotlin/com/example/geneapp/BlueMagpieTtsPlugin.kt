@@ -452,7 +452,7 @@ private class AndroidScaffoldBlueMagpieBridge(private val context: Context) : Bl
         val (manifest, validation) = validation()
         if (!validation.isReady) throw BlueMagpieBridgeException(validation.code.wireValue)
         val models = manifest.models.associateBy { it.id }
-        val backbone = File(modelDirectory, models.getValue("barbet_q4_k_m").filename)
+        val backbone = File(modelDirectory, models.getValue("barbet_q8_0").filename)
         val codec = File(modelDirectory, models.getValue("audio_vae_f16").filename)
         val result = nativeResult(
             BlueMagpieNativeBindings.nativeInitializeJson(

@@ -28,10 +28,10 @@ class ModelValidatorTest {
             models =
                 listOf(
                     ModelDescriptor(
-                        id = "barbet_q4_k_m",
-                        filename = "BlueMagpie-Barbet-1B-q4_k_m.gguf",
-                        byteSize = 693_008_576,
-                        sha256 = "c8e66535e9ee3b114a9be05ac404cb9585910865718095a3914c2b51c4d5462f",
+                        id = "barbet_q8_0",
+                        filename = "BlueMagpie-Barbet-1B-q8_0.gguf",
+                        byteSize = 1_162_038_464,
+                        sha256 = "4fd4ec9b2269c6bad19431adefab01d4dec2c6e7e45c3756dd4714b0c5202b3b",
                         provenanceUrl = "https://huggingface.co/OpenFormosa/BlueMagpie-TTS",
                     ),
                     ModelDescriptor(
@@ -59,13 +59,13 @@ class ModelValidatorTest {
     @Test
     fun `missing Barbet model fails closed`() {
         val privateDirectory = temporaryFolder.newFolder("models", "bluemagpie")
-        val inspector = FakeInspector.validFor(manifest).withMissing("barbet_q4_k_m")
+        val inspector = FakeInspector.validFor(manifest).withMissing("barbet_q8_0")
 
         val result = validator(inspector).validate(privateDirectory, expectedPaths(privateDirectory))
 
         assertEquals(ModelValidationCode.MODEL_MISSING, result.code)
         assertFalse(result.isReady)
-        assertEquals("barbet_q4_k_m", result.failedModelId)
+        assertEquals("barbet_q8_0", result.failedModelId)
     }
 
     @Test
@@ -84,7 +84,7 @@ class ModelValidatorTest {
     fun `public external path is rejected before file inspection`() {
         val privateDirectory = temporaryFolder.newFolder("models", "bluemagpie")
         val paths = expectedPaths(privateDirectory).toMutableMap()
-        paths["barbet_q4_k_m"] = File("/sdcard/Download/BlueMagpie-Barbet-1B-q4_k_m.gguf")
+        paths["barbet_q8_0"] = File("/sdcard/Download/BlueMagpie-Barbet-1B-q8_0.gguf")
         val inspector = FakeInspector.validFor(manifest)
 
         val result = validator(inspector).validate(privateDirectory, paths)
@@ -98,7 +98,7 @@ class ModelValidatorTest {
     @Test
     fun `wrong byte size is reported without exposing path`() {
         val privateDirectory = temporaryFolder.newFolder("models", "bluemagpie")
-        val inspector = FakeInspector.validFor(manifest).withSize("barbet_q4_k_m", 1)
+        val inspector = FakeInspector.validFor(manifest).withSize("barbet_q8_0", 1)
 
         val result = validator(inspector).validate(privateDirectory, expectedPaths(privateDirectory))
 

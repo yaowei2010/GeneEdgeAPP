@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.19)
 
 project(geneedge_whisper)
 
@@ -65,6 +65,15 @@ if(GENEEDGE_BLUEMAGPIE_POC)
     )
     set(ANDROID_ABI "${_GENEEDGE_ANDROID_ABI}")
     unset(_GENEEDGE_ANDROID_ABI)
+
+    include("${CMAKE_CURRENT_SOURCE_DIR}/BlueMagpieVulkan.cmake")
+    geneedge_apply_bluemagpie_model_profile(rnllama "${BLUEMAGPIE_RUNTIME_DIR}")
+    # The upstream Android build enables fast floating-point reassociation.
+    # Continuous-latent diffusion is substantially more sensitive to numeric
+    # drift than token-only inference, so keep the diagnostic CPU path precise.
+    # These later options override rnllama's earlier -ffp-model=fast setting.
+    target_compile_options(rnllama PRIVATE -ffp-model=precise -fno-fast-math)
+    geneedge_enable_bluemagpie_vulkan(rnllama "${BLUEMAGPIE_RUNTIME_DIR}")
 
     # The pinned codec branch references its WAV utility from tts_runner but
     # the upstream Android glob omits the nested common/utils directory.

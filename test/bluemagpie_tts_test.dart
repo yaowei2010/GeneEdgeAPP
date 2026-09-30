@@ -52,7 +52,7 @@ void main() {
           'models': [
             {
               'id': 'barbet',
-              'fileName': 'BlueMagpie-Barbet-1B-q4_k_m.gguf',
+              'fileName': 'BlueMagpie-Barbet-1B-q8_0.gguf',
               'state': 'ready',
               'sizeBytes': 661000000,
             },

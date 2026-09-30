@@ -8,7 +8,8 @@ PoC 的目標是取得可否產品化的實測證據，不是宣告所有 Androi
 
 **Goals:**
 
-- 在 Android ARM64 debug build 中驗證 codec-enabled C++ runtime 能否載入 BlueMagpie Q4 Barbet 與 AudioVAE GGUF。
+- 在 Android ARM64 debug build 中驗證 codec-enabled C++ runtime 能否載入 BlueMagpie Barbet 與 AudioVAE GGUF；Q4 Vulkan 產生非語音輸出後，以 Q8 作為相容性對照。
+- 將 GGUF 對應上游 revision 的 diffusion profile 固定為 CFG 2.0、10 timesteps，避免 codec branch 的其他模型預設值污染測試結果。
 - 從 Flutter 啟動、取消與釋放離線合成，產生可播放的 48 kHz WAV。
 - 量測模型驗證、載入、首音、總生成時間、輸出長度與 process memory。
 - runtime/source/model 缺失時保持正式 App 可編譯、可啟動且不 crash。

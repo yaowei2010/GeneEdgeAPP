@@ -1,9 +1,11 @@
 #include <jni.h>
+#include <android/log.h>
 
 #include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <cstdio>
 #include <fstream>
 #include <memory>
@@ -13,6 +15,7 @@
 #include <vector>
 
 #include "codec_lm.h"
+#include "ggml-backend.h"
 #include "nlohmann/json.hpp"
 #include "rn-completion.h"
 #include "rn-llama.h"
@@ -29,6 +32,7 @@ using clock_type = std::chrono::steady_clock;
 
 std::mutex g_context_mutex;
 std::unique_ptr<rnllama::llama_rn_context> g_context;
+std::string g_backend;
 std::atomic<bool> g_cancelled{false};
 std::atomic<uint64_t> g_active_request{0};
 
@@ -128,13 +132,33 @@ Java_com_example_geneapp_bluemagpie_BlueMagpieNativeBindings_nativeInitializeJso
     const std::string codec_path = from_jstring(env, codec_path_value);
     const std::string backend = from_jstring(env, backend_value);
     if (backbone_path.empty() || codec_path.empty()) return to_jstring(env, failure("model_missing"));
-    if (backend != "cpu") return to_jstring(env, failure("backend_unavailable"));
+    if (backend != "cpu" && backend != "vulkan") {
+        return to_jstring(env, failure("backend_unavailable"));
+    }
+    const bool use_vulkan = backend == "vulkan";
+    const char * gpu_device_name = nullptr;
+    if (use_vulkan) {
+        // PowerVR D-Series advertises subgroup arithmetic but rejects the
+        // Q4_K subgroup pipeline with VK_ERROR_UNKNOWN. Select the portable
+        // shared-memory reduction variant for this Android PoC.
+        setenv("GGML_VK_DISABLE_SUBGROUP_REDUCTIONS", "1", 1);
+        lm_ggml_backend_dev_t gpu = lm_ggml_backend_dev_by_type(LM_GGML_BACKEND_DEVICE_TYPE_GPU);
+        if (gpu == nullptr) {
+            gpu = lm_ggml_backend_dev_by_type(LM_GGML_BACKEND_DEVICE_TYPE_IGPU);
+        }
+        if (gpu == nullptr) return to_jstring(env, failure("backend_unavailable"));
+        gpu_device_name = lm_ggml_backend_dev_name(gpu);
+    }
 
     std::lock_guard<std::mutex> lock(g_context_mutex);
-    if (g_context != nullptr) {
-        return to_jstring(env, {{"ok", true}, {"state", "ready"}, {"backend", "cpu"},
+    if (g_context != nullptr && g_backend == backend) {
+        return to_jstring(env, {{"ok", true}, {"state", "ready"}, {"backend", backend},
             {"elapsedMs", 0}, {"rssBeforeBytes", rss_bytes()}, {"rssAfterBytes", rss_bytes()}});
     }
+    // Backend changes require a fresh model/context because tensor placement is
+    // fixed while llama_model is loaded.
+    g_context.reset();
+    g_backend.clear();
     const auto started = clock_type::now();
     const int64_t before = rss_bytes();
     try {
@@ -146,17 +170,43 @@ Java_com_example_geneapp_bluemagpie_BlueMagpieNativeBindings_nativeInitializeJso
         params.embedding = true;
         const unsigned cores = std::thread::hardware_concurrency();
         params.cpuparams.n_threads = static_cast<int>(cores == 0 ? 4 : std::min(cores, 8U));
-        params.n_gpu_layers = 0;
-        params.no_kv_offload = true;
+        params.n_gpu_layers = use_vulkan ? -1 : 0;
+        params.no_kv_offload = !use_vulkan;
+        __android_log_print(
+            ANDROID_LOG_INFO,
+            "GeneEdgeBlueMagpie",
+            "initializing backend=%s device=%s n_gpu_layers=%d",
+            backend.c_str(),
+            gpu_device_name == nullptr ? "CPU" : gpu_device_name,
+            params.n_gpu_layers);
         if (!context->loadModel(params)) return to_jstring(env, failure("insufficient_memory"));
-        if (!context->initVocoder(codec_path, -1, false)) return to_jstring(env, failure("decode_failed"));
+        // Q4 generated deterministic non-speech even with CPU AudioVAE, so the
+        // Q8 comparison keeps both stages on the selected Vulkan backend.
+        if (!context->initVocoder(codec_path, -1, use_vulkan)) {
+            return to_jstring(env, failure("decode_failed"));
+        }
         g_context = std::move(context);
-        return to_jstring(env, {{"ok", true}, {"state", "ready"}, {"backend", "cpu"},
+        g_backend = backend;
+        return to_jstring(env, {{"ok", true}, {"state", "ready"}, {"backend", backend},
+            {"device", gpu_device_name == nullptr ? "CPU" : gpu_device_name},
             {"elapsedMs", elapsed_ms(started)}, {"rssBeforeBytes", before},
             {"rssAfterBytes", rss_bytes()}});
     } catch (const std::bad_alloc &) {
         return to_jstring(env, failure("insufficient_memory"));
+    } catch (const std::exception & error) {
+        __android_log_print(
+            ANDROID_LOG_ERROR,
+            "GeneEdgeBlueMagpie",
+            "initialize backend=%s failed: %s",
+            backend.c_str(),
+            error.what());
+        return to_jstring(env, failure("internal_error"));
     } catch (...) {
+        __android_log_print(
+            ANDROID_LOG_ERROR,
+            "GeneEdgeBlueMagpie",
+            "initialize backend=%s failed with non-standard exception",
+            backend.c_str());
         return to_jstring(env, failure("internal_error"));
     }
 }
@@ -188,7 +238,10 @@ Java_com_example_geneapp_bluemagpie_BlueMagpieNativeBindings_nativeSynthesizeJso
         const auto formatted = context.tts_wrapper->getFormattedAudioCompletion(&context, "", text);
         if (formatted.flow != "continuous_embd") { finish(); return to_jstring(env, failure("decode_failed")); }
         context.params.prompt = formatted.prompt;
-        context.params.n_predict = 500;
+        // The upstream BlueMagpie probe uses 30 patches for its smoke test.
+        // Diagnostic ceiling: 8 patches produce about 1.28 seconds of audio,
+        // enough to validate mobile CPU correctness without a multi-minute run.
+        context.params.n_predict = 8;
         context.params.embedding = true;
         context.params.sampling.temp = 0.7f;
         context.params.sampling.top_p = 0.9f;
@@ -265,5 +318,6 @@ Java_com_example_geneapp_bluemagpie_BlueMagpieNativeBindings_nativeRelease(
     g_cancelled.store(true);
     std::lock_guard<std::mutex> lock(g_context_mutex);
     g_context.reset();
+    g_backend.clear();
     g_active_request.store(0);
 }
