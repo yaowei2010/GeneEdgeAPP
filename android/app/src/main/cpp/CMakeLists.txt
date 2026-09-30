@@ -2,6 +2,13 @@ cmake_minimum_required(VERSION 3.19)
 
 project(geneedge_whisper)
 
+# Separate C engine: never linked to the AI/TTS runtime or the USB importer.
+add_library(geneedge_snp SHARED snp/snp_engine.c snp/genotype_model.c snp/snp_bridge.cpp)
+set_target_properties(geneedge_snp PROPERTIES C_STANDARD 99 C_STANDARD_REQUIRED ON CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+target_compile_definitions(geneedge_snp PRIVATE _FILE_OFFSET_BITS=64)
+target_compile_options(geneedge_snp PRIVATE -O2 -Wall -Wextra -Werror)
+target_link_libraries(geneedge_snp PRIVATE m)
+
 option(
     GENEEDGE_BLUEMAGPIE_POC
     "Compile the Android-only BlueMagpie diagnostic runtime"

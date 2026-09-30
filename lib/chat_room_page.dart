@@ -8,6 +8,7 @@ import "chat_controller.dart";
 import "models.dart";
 import "usb_gene_dongle.dart";
 import "usb_gene_dongle_page.dart";
+import "snp_compute_page.dart";
 
 class ChatRoomPage extends StatefulWidget {
   final VoidCallback? onLogout;
@@ -406,6 +407,14 @@ class _ChatRoomPageState extends State<ChatRoomPage>
                 Navigator.of(context).pop();
                 _openUsbGeneDongle();
               },
+        onOpenSnpCompute:
+            !kIsWeb && defaultTargetPlatform == TargetPlatform.android
+                ? () {
+                    Navigator.of(context).pop();
+                    Navigator.of(context).push(MaterialPageRoute<void>(
+                        builder: (_) => const SnpComputePage()));
+                  }
+                : null,
       ),
       body: GestureDetector(
         behavior: HitTestBehavior.translucent,
@@ -949,6 +958,7 @@ class _AppDrawer extends StatelessWidget {
   final VoidCallback? onLogout;
   final VoidCallback? onOpenBlueMagpiePoc;
   final VoidCallback? onOpenUsbGeneDongle;
+  final VoidCallback? onOpenSnpCompute;
 
   const _AppDrawer({
     required this.controller,
@@ -957,6 +967,7 @@ class _AppDrawer extends StatelessWidget {
     this.onLogout,
     this.onOpenBlueMagpiePoc,
     this.onOpenUsbGeneDongle,
+    this.onOpenSnpCompute,
   });
 
   @override
@@ -1098,6 +1109,13 @@ class _AppDrawer extends StatelessWidget {
                     title: "USB / Gene dongle",
                     subtitle: "自動偵測與匯入雙檔資料",
                     onTap: onOpenUsbGeneDongle,
+                  ),
+                if (onOpenSnpCompute != null)
+                  _DrawerAction(
+                    icon: Icons.biotech_rounded,
+                    title: "手機 SNP 運算",
+                    subtitle: "USB 直接讀取・C 離線計數",
+                    onTap: onOpenSnpCompute,
                   ),
                 if (controller.hasBleGateway && !controller.useLocalComputeMode)
                   _DrawerAction(

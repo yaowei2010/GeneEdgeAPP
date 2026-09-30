@@ -1,0 +1,288 @@
+import 'dart:async';
+import 'package:flutter/services.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:geneapp/snp_compute.dart';
+
+String get sequence => '${'A' * 150}C${'A' * 150}';
+SnpQuery get query =>
+    SnpQuery.validated(id: 'rs1', sequence: sequence, ref: 'C', alt: 'T');
+Map<String, Object?> sourceWire(int revision) => {
+      'revision': revision,
+      'sources': [
+        {'id': 'usb1', 'label': 'USB / gene'}
+      ],
+      'volumes': [],
+      'selectedSourceId': 'usb1'
+    };
+Map<String, Object?> result() => {
+      'id': 'rs1',
+      'refAllele': 'C',
+      'altAllele': 'T',
+      'sourceId': 'usb1',
+      'sourceLabel': 'USB / gene',
+      'total': 108,
+      'ref': 4,
+      'alt': 4,
+      'ambiguous': 50,
+      'coverageOnly': 50,
+      'skippedBuckets': 0,
+      'posterior': [.1, .8, .1],
+      'gt': './.',
+      'effectiveDepth': 8,
+      'noCallReason': 'LOW_DEPTH',
+      'modelVersion': 'bb-research-v1',
+      'calibrated': false,
+      'parameters': {
+        'epsilon': .01,
+        'rho': .02,
+        'priors': [1 / 3, 1 / 3, 1 / 3],
+        'minDepth': 10,
+        'minPosterior': .99
+      }
+    };
+
+class FakeSnpPlatform implements SnpComputePlatform {
+  int runCalls = 0;
+  final stream = StreamController<Object?>.broadcast(sync: true);
+  Future<Object?> Function()? onRun;
+  @override
+  Stream<Object?> get events => stream.stream;
+  @override
+  Future<Object?> sources() async => sourcesMap();
+  Map<String, Object?> sourcesMap() => sourceWire(1);
+  @override
+  Future<Object?> requestAccess(String id) async => sourcesMap();
+  @override
+  Future<Object?> selectSource(String id) async => sourcesMap();
+  @override
+  Future<Object?> run(String id, List<SnpQuery> queries) async {
+    runCalls++;
+    return onRun == null ? {'jobId': 'job1'} : await onRun!();
+  }
+
+  @override
+  Future<void> cancel() async {}
+  @override
+  Future<String?> pickPanel() async => null;
+}
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  test('rejects missing provenance and invalid allele definitions', () {
+    for (final key in ['refAllele', 'altAllele', 'sourceId', 'sourceLabel']) {
+      final missing = Map<String, Object?>.of(result())..remove(key);
+      expect(() => SnpResult.fromMap(missing), throwsFormatException);
+    }
+    expect(() => SnpResult.fromMap({...result(), 'altAllele': 'C'}),
+        throwsFormatException);
+    expect(() => SnpResult.fromMap({...result(), 'refAllele': 'N'}),
+        throwsFormatException);
+  });
+  test('adapter sends queries to native channel, never computes genotypes',
+      () async {
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(MethodChannelSnpComputePlatform.methods,
+            (call) async {
+      calls.add(call);
+      return call.method == 'run' ? {'jobId': 'job1'} : null;
+    });
+    addTearDown(() => TestDefaultBinaryMessengerBinding
+        .instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+            MethodChannelSnpComputePlatform.methods, null));
+    final p = MethodChannelSnpComputePlatform();
+    await p.sources();
+    await p.requestAccess('volume');
+    await p.selectSource('usb1');
+    await p.run('usb1', [query]);
+    await p.cancel();
+    await p.pickPanel();
+    expect(calls.map((c) => c.method), [
+      'sources',
+      'requestAccess',
+      'selectSource',
+      'run',
+      'cancel',
+      'pickPanel'
+    ]);
+    expect(calls[3].arguments, {
+      'sourceId': 'usb1',
+      'queries': [query.toMap()]
+    });
+  });
+  test('progress is job scoped and native error clears evidence', () async {
+    final p = FakeSnpPlatform();
+    final c = SnpComputeController(platform: p, supported: true);
+    await c.start();
+    await c.run([query]);
+    p.stream.add({
+      'jobId': 'old',
+      'revision': 999,
+      'status': 'completed',
+      'completed': 1,
+      'total': 1,
+      'results': [result()]
+    });
+    expect(c.status, 'running');
+    p.stream.add({
+      'jobId': 'job1',
+      'revision': 2,
+      'status': 'running',
+      'completed': 0,
+      'total': 1
+    });
+    expect(c.completed, 0);
+    expect(c.total, 1);
+    p.stream.add({
+      'jobId': 'job1',
+      'revision': 3,
+      'status': 'error',
+      'completed': 0,
+      'total': 1,
+      'errorCode': 'IO_ERROR'
+    });
+    expect(c.status, 'error');
+    expect(c.errorCode, 'IO_ERROR');
+    expect(c.results, isEmpty);
+    c.dispose();
+    await p.stream.close();
+  });
+  test('malformed event fails closed and cannot later become success',
+      () async {
+    final p = FakeSnpPlatform();
+    final c = SnpComputeController(platform: p, supported: true);
+    await c.start();
+    await c.run([query]);
+    p.stream.add({
+      'jobId': 'job1',
+      'revision': 2,
+      'status': 'completed',
+      'completed': 1,
+      'total': 1,
+      'results': [
+        {...result(), 'total': 109}
+      ]
+    });
+    expect(c.status, 'error');
+    p.stream.add({
+      'jobId': 'job1',
+      'revision': 3,
+      'status': 'completed',
+      'completed': 1,
+      'total': 1,
+      'results': [result()]
+    });
+    expect(c.status, 'error');
+    expect(c.results, isEmpty);
+    c.dispose();
+    await p.stream.close();
+  });
+  test('validates entire panel before any native work', () {
+    expect(() => SnpQuery.parseFasta('>rs1_C_T\n$sequence\n>rs2_A_G\nAAA'),
+        throwsFormatException);
+    expect(() => SnpQuery.parseFasta('>rs1_C_T\n${'N' * 301}'),
+        throwsFormatException);
+    expect(() => SnpQuery.parseFasta('>rs1_C_C\n$sequence'),
+        throwsFormatException);
+    expect(
+        () => SnpQuery.parseFasta(
+            List.generate(3001, (i) => '>rs${i}_C_T\n$sequence').join('\n')),
+        throwsFormatException);
+  });
+  test('query validates centers and rejects malformed or duplicate FASTA', () {
+    expect(query.toMap()['sequence'], sequence);
+    expect(
+        () => SnpQuery.validated(
+            id: 'x', sequence: 'A' * 301, ref: 'C', alt: 'T'),
+        throwsFormatException);
+    expect(
+        () => SnpQuery.parseFasta('>rs1_C_T\n$sequence\n>rs1_C_T\n$sequence'),
+        throwsFormatException);
+    expect(
+        SnpQuery.parseFasta(
+                '>rs1_C_T\n${sequence.substring(0, 100)}\n${sequence.substring(100)}')
+            .single
+            .id,
+        'rs1');
+  });
+  test(
+      'result validates partition and effective depth, preserves native no call',
+      () {
+    final parsed = SnpResult.fromMap(result());
+    expect(parsed.effectiveDepth, 8);
+    expect(parsed.gt, './.');
+    expect(() => SnpResult.fromMap({...result(), 'total': 109}),
+        throwsFormatException);
+    expect(() => SnpResult.fromMap({...result(), 'effectiveDepth': 108}),
+        throwsFormatException);
+  });
+  test('early completion buffered; cancel suppresses late successful events',
+      () async {
+    final p = FakeSnpPlatform();
+    final c = SnpComputeController(platform: p, supported: true);
+    await c.start();
+    p.onRun = () async {
+      p.stream.add({
+        'jobId': 'job1',
+        'revision': 2,
+        'status': 'completed',
+        'completed': 1,
+        'total': 1,
+        'results': [result()]
+      });
+      return {'jobId': 'job1'};
+    };
+    await c.run([query]);
+    expect(c.status, 'completed');
+    expect(c.results.single.effectiveDepth, 8);
+    await c.cancel();
+    p.stream.add({
+      'jobId': 'job1',
+      'revision': 3,
+      'status': 'completed',
+      'completed': 1,
+      'total': 1,
+      'results': [result()]
+    });
+    expect(c.results, isEmpty);
+    expect(c.status, 'cancelled');
+    c.dispose();
+    await p.stream.close();
+  });
+  test('rejects older revision and invalidates results on source refresh',
+      () async {
+    final p = FakeSnpPlatform();
+    final c = SnpComputeController(platform: p, supported: true);
+    await c.start();
+    await c.run([query]);
+    p.stream.add({
+      'jobId': 'job1',
+      'revision': 3,
+      'status': 'running',
+      'completed': 0,
+      'total': 1
+    });
+    p.stream.add({
+      'jobId': 'job1',
+      'revision': 2,
+      'status': 'completed',
+      'completed': 1,
+      'total': 1,
+      'results': [result()]
+    });
+    expect(c.status, 'running');
+    p.stream.add(
+        {'revision': 4, 'status': 'invalidated', 'errorCode': 'USB_REMOVED'});
+    expect(c.results, isEmpty);
+    expect(c.status, 'invalidated');
+    c.dispose();
+    await p.stream.close();
+  });
+  test('non Android never starts native platform', () async {
+    final c = SnpComputeController(supported: false);
+    await c.start();
+    expect(c.status, 'unsupported');
+    c.dispose();
+  });
+}

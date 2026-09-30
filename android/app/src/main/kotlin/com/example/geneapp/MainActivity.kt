@@ -27,6 +27,7 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         flutterEngine.plugins.add(UsbGeneDonglePlugin())
+        flutterEngine.plugins.add(SnpComputePlugin())
         if (BuildConfig.BLUEMAGPIE_POC_ENABLED) {
             flutterEngine.plugins.add(BlueMagpieTtsPlugin())
         }
