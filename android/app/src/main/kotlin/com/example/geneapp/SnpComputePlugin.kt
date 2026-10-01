@@ -45,6 +45,8 @@ class SnpComputePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallH
     private var selected: String? = null
     private var picker: MethodChannel.Result? = null
     private var pickerVolume: String? = null
+    private var pickerSourceRevision = 0L
+    private val sourcePreferences get() = context.getSharedPreferences("snp_usb_sources", Context.MODE_PRIVATE)
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context?, i: Intent?) {
             invalidate("USB_REMOVED"); sources = emptyMap()
@@ -110,10 +112,14 @@ class SnpComputePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallH
     private fun authorized(uri: Uri): Boolean = context.contentResolver.persistedUriPermissions.any {
         it.isReadPermission && valid(it.uri) && DocumentsContract.getTreeDocumentId(it.uri) == DocumentsContract.getTreeDocumentId(uri)
     }
+    private fun sourceVolume(id: String): String = DocumentsContract.getDocumentId(Uri.parse(id)).substringBefore(':')
     private fun snapshot(): Map<String, Any?> = mapOf("revision" to revision, "selectedSourceId" to selected,
-        "sources" to sources.map { (id, s) -> mapOf("id" to id, "label" to s.folder.name) },
-        "volumes" to volumes().map { v -> mapOf("id" to v.uuid, "label" to v.getDescription(context), "authorized" to
-            context.contentResolver.persistedUriPermissions.any { it.isReadPermission && valid(it.uri, v.uuid) }) })
+        "sources" to sources.map { (id, s) -> mapOf("id" to id, "label" to s.folder.name, "volumeId" to sourceVolume(id)) },
+        "volumes" to volumes().map { v ->
+            val grants = context.contentResolver.persistedUriPermissions.filter { it.isReadPermission && valid(it.uri, v.uuid) }
+            mapOf("id" to v.uuid, "label" to v.getDescription(context), "authorized" to grants.isNotEmpty(),
+                "authorizationScopes" to grants.map { SnpUsbAccess.scopeLabel(DocumentsContract.getTreeDocumentId(it.uri)) }.distinct())
+        })
     private fun failure(e: Exception): String = when(e) {
         is SnpFailure -> e.code; is SecurityException -> "PERMISSION_DENIED"; else -> "IO_ERROR"
     }
@@ -123,7 +129,7 @@ class SnpComputePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallH
             try {
                 val roots = context.contentResolver.persistedUriPermissions.filter { it.isReadPermission && valid(it.uri) }.map {
                     val doc = DocumentsContract.buildDocumentUriUsingTree(it.uri, DocumentsContract.getTreeDocumentId(it.uri))
-                    GeneEntry(doc.toString(), DocumentsContract.getTreeDocumentId(it.uri), true)
+                    GeneEntry(doc.toString(), SnpUsbAccess.scopeLabel(DocumentsContract.getTreeDocumentId(it.uri)), true)
                 }
                 val found = SnpSourceScanner(AndroidSnpTree(context)).scan(roots) { token != sourceRevision }
                 main.post {
@@ -131,6 +137,11 @@ class SnpComputePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallH
                     else {
                         sources = found.associateBy { it.folder.uri }
                         if (selected != null && !sources.containsKey(selected)) invalidate("USB_REMOVED")
+                        val pairs = sources.keys.filter { valid(Uri.parse(it)) && authorized(Uri.parse(it)) }.associateWith { sourceVolume(it) }
+                        val remembered = volumes().mapNotNull { v ->
+                            sourcePreferences.getString(v.uuid!!.lowercase(), null)?.let { v.uuid!! to it }
+                        }.toMap()
+                        selected = SnpUsbAccess.restore(selected, pairs, remembered)
                         revision++; result.success(snapshot())
                     }
                 }
@@ -153,7 +164,10 @@ class SnpComputePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallH
                 "selectSource" -> {
                     val id = call.argument<String>("sourceId") ?: throw SnpFailure("INVALID_FORMAT")
                     if (!sources.containsKey(id) || !valid(Uri.parse(id)) || !authorized(Uri.parse(id))) throw SnpFailure("PERMISSION_DENIED")
-                    invalidate("CANCELLED"); selected = id; result.success(snapshot())
+                    if (selected != id) invalidate("CANCELLED")
+                    selected = id
+                    sourcePreferences.edit().putString(sourceVolume(id).lowercase(), id).apply()
+                    revision++; result.success(snapshot())
                 }
                 "run" -> run(call, result)
                 "cancel" -> { val diagnostic = interrupted("cancelled"); gate.invalidate(); opening?.cancel(); emit(mapOf("status" to "cancelled") + diagnostic); result.success(null) }
@@ -165,10 +179,13 @@ class SnpComputePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallH
         if (picker != null) throw SnpFailure("BUSY")
         val activity = binding?.activity ?: throw SnpFailure("CANCELLED")
         val volume = volumes().find { it.uuid.equals(id, true) } ?: throw SnpFailure("USB_REMOVED")
-        picker = result; pickerVolume = volume.uuid
+        picker = result; pickerVolume = volume.uuid; pickerSourceRevision = sourceRevision
         try {
             val intent = if (Build.VERSION.SDK_INT >= 29) volume.createOpenDocumentTreeIntent() else Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
             intent.flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or Intent.FLAG_GRANT_PREFIX_URI_PERMISSION
+            val rootId = SnpUsbAccess.rootDocumentId(volume.uuid!!, volumes().mapNotNull { it.uuid }.toSet())
+            intent.putExtra(DocumentsContract.EXTRA_INITIAL_URI,
+                DocumentsContract.buildDocumentUri("com.android.externalstorage.documents", rootId))
             activity.startActivityForResult(intent, 61905)
         } catch(e: Exception) { picker = null; pickerVolume = null; throw e }
     }
@@ -179,6 +196,7 @@ class SnpComputePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallH
         if (resultCode != Activity.RESULT_OK || uri == null) { result.error("PERMISSION_DENIED", "Selection cancelled", null); return true }
         if (code == 61905) {
             try {
+                if (pickerSourceRevision != sourceRevision) throw SnpFailure("USB_REMOVED")
                 if (!valid(uri, volume)) throw SnpFailure("PERMISSION_DENIED")
                 context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 invalidate("CANCELLED"); discover(result)

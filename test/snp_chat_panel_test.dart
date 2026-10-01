@@ -19,12 +19,35 @@ import 'snp_locus_compute_test.dart' show FakeLocusPlatform, locusWire;
 class NoAi extends Fake implements ApiService {}
 
 class ChatUsbPlatform extends FakeLocusPlatform {
+  Future<Object?> Function(String)? onAccess, onSelect;
+  int accessCalls = 0, selectCalls = 0;
+  String? lastVolume;
+  @override
+  Future<Object?> requestAccess(String id) async {
+    accessCalls++;
+    lastVolume = id;
+    return onAccess == null ? sourceState : await onAccess!(id);
+  }
+
+  @override
+  Future<Object?> selectSource(String id) async {
+    selectCalls++;
+    return onSelect == null ? sourceState : await onSelect!(id);
+  }
+
   Map<String, Object?> sourceState = {
     'revision': 1,
     'sources': [
       {'id': 'usb1', 'label': 'USB / gene'}
     ],
-    'volumes': [],
+    'volumes': [
+      {
+        'id': 'usb-volume',
+        'label': 'USB',
+        'authorized': true,
+        'authorizationScopes': ['USB 根目錄']
+      }
+    ],
     'selectedSourceId': 'usb1'
   };
   @override
@@ -38,6 +61,300 @@ class NoHttp extends HttpOverrides {
 }
 
 void main() {
+  testWidgets(
+      'multiple USBs require a volume and source choice; subfolder grant stays explicit',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final p = ChatUsbPlatform();
+    p.sourceState = {
+      'revision': 1,
+      'selectedSourceId': null,
+      'sources': [
+        {'id': 'gene-a', 'label': 'gene A', 'volumeId': 'usb-a'},
+        {'id': 'gene-b', 'label': 'gene B', 'volumeId': 'usb-b'}
+      ],
+      'volumes': [
+        {
+          'id': 'usb-a',
+          'label': 'USB A',
+          'authorized': true,
+          'authorizationScopes': ['USB 根目錄']
+        },
+        {
+          'id': 'usb-b',
+          'label': 'USB B',
+          'authorized': true,
+          'authorizationScopes': ['子資料夾：gene B']
+        }
+      ]
+    };
+    p.onSelect = (id) async {
+      p.sourceState = {
+        ...p.sourceState,
+        'revision': (p.sourceState['revision'] as int) + 1,
+        'selectedSourceId': id
+      };
+      return p.sourceState;
+    };
+    final c = SnpComputeController(platform: p, supported: true);
+    final chat = ChatController(api: NoAi(), threadId: 'multi');
+    await tester.pumpWidget(MaterialApp(
+        home: ChangeNotifierProvider.value(
+            value: chat, child: ChatRoomPage(snpCompute: c))));
+    await tester.pumpAndSettle();
+    expect(
+        tester
+            .widget<FilledButton>(find.widgetWithText(FilledButton, '使用此 USB'))
+            .onPressed,
+        isNull);
+    expect(find.textContaining('沿用唯讀授權'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('usb-confirm-volume')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('USB B').last);
+    await tester.pumpAndSettle();
+    expect(find.text('沿用唯讀授權：子資料夾：gene B'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('confirm-source-usb-b-null')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('gene B').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('使用此 USB'));
+    await tester.pumpAndSettle();
+    expect(c.sourceConfirmed, true);
+    expect(c.selectedSourceId, 'gene-b');
+    expect(p.accessCalls, 0);
+    expect(p.runCalls, 0);
+    await tester.pumpWidget(const SizedBox());
+    c.dispose();
+    chat.dispose();
+    await p.stream.close();
+  });
+  testWidgets(
+      'root authorization reply updates the same dialog and later reuses grant',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final p = ChatUsbPlatform();
+    final ready = p.sourceState;
+    p.sourceState = {
+      'revision': 1,
+      'sources': [],
+      'selectedSourceId': null,
+      'volumes': [
+        {
+          'id': 'usb-volume',
+          'label': 'USB',
+          'authorized': false,
+          'authorizationScopes': []
+        }
+      ]
+    };
+    p.onAccess = (_) async {
+      p.sourceState = {...ready, 'revision': 2};
+      return p.sourceState;
+    };
+    final c = SnpComputeController(platform: p, supported: true);
+    final chat = ChatController(api: NoAi(), threadId: 'reuse');
+    await tester.pumpWidget(MaterialApp(
+        home: ChangeNotifierProvider.value(
+            value: chat, child: ChatRoomPage(snpCompute: c))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('授權 USB 根目錄'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(find.text('沿用唯讀授權：USB 根目錄'), findsOneWidget);
+    await c.refresh();
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsOneWidget);
+    await tester.tap(find.text('使用此 USB'));
+    await tester.pumpAndSettle();
+    await c.refresh();
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(p.accessCalls, 1);
+    expect(p.runCalls, 0);
+    await tester.pumpWidget(const SizedBox());
+    c.dispose();
+    chat.dispose();
+    await p.stream.close();
+  });
+  for (final close in ['cancel', 'outside', 'back']) {
+    testWidgets(
+        'USB $close dismissal does not repeat; unplug/reinsert prompts again',
+        (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final p = ChatUsbPlatform();
+      final initial = p.sourceState;
+      final c = SnpComputeController(platform: p, supported: true);
+      final chat = ChatController(api: NoAi(), threadId: close);
+      await tester.pumpWidget(MaterialApp(
+          home: ChangeNotifierProvider.value(
+              value: chat, child: ChatRoomPage(snpCompute: c))));
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsOneWidget);
+      if (close == 'cancel') {
+        await tester.tap(find.text('取消'));
+      } else if (close == 'outside') {
+        await tester.tapAt(const Offset(5, 5));
+      } else {
+        await tester.binding.handlePopRoute();
+      }
+      await tester.pumpAndSettle();
+      await c.refresh();
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(c.sourceConfirmed, false);
+      expect(p.runCalls, 0);
+      expect(p.accessCalls, 0);
+      p.stream.add(
+          {'revision': 2, 'status': 'invalidated', 'errorCode': 'USB_REMOVED'});
+      p.sourceState = {
+        'revision': 3,
+        'sources': [],
+        'volumes': [],
+        'selectedSourceId': null
+      };
+      await c.refresh();
+      await tester.pumpAndSettle();
+      p.sourceState = {...initial, 'revision': 4};
+      await c.refresh();
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      c.dispose();
+      chat.dispose();
+      await p.stream.close();
+    });
+  }
+  testWidgets(
+      'USB root authorization is explicit; removal rejects late grant with keyboard open',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetViewInsets);
+    final p = ChatUsbPlatform();
+    final ready = {...p.sourceState, 'revision': 4};
+    p.sourceState = {
+      'revision': 1,
+      'sources': [],
+      'selectedSourceId': null,
+      'volumes': [
+        {
+          'id': 'usb-volume',
+          'label': 'USB',
+          'authorized': false,
+          'authorizationScopes': []
+        }
+      ]
+    };
+    final grant = Completer<Object?>();
+    p.onAccess = (_) => grant.future;
+    final c = SnpComputeController(platform: p, supported: true);
+    final chat = ChatController(api: NoAi(), threadId: 'grant');
+    await tester.pumpWidget(MaterialApp(
+        home: ChangeNotifierProvider.value(
+            value: chat, child: ChatRoomPage(snpCompute: c))));
+    await tester.pumpAndSettle();
+    expect(find.text('預設位置：USB 根目錄'), findsOneWidget);
+    expect(p.accessCalls, 0);
+    await tester.ensureVisible(find.text('授權 USB 根目錄'));
+    await tester.tap(find.text('授權 USB 根目錄'));
+    await tester.pump();
+    expect(p.accessCalls, 1);
+    expect(p.lastVolume, 'usb-volume');
+    expect(p.runCalls, 0);
+    p.stream.add(
+        {'revision': 2, 'status': 'invalidated', 'errorCode': 'USB_REMOVED'});
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
+    grant.complete(ready);
+    await tester.pumpAndSettle();
+    expect(c.sources, isEmpty);
+    expect(c.sourceConfirmed, false);
+    expect(find.byKey(const ValueKey('usb-source-icon')), findsNothing);
+    expect(tester.takeException(), isNull);
+    expect(p.runCalls, 0);
+    await tester.pumpWidget(const SizedBox());
+    c.dispose();
+    chat.dispose();
+    await p.stream.close();
+  });
+  testWidgets(
+      'closing confirmation during native select never confirms after late reply',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final p = ChatUsbPlatform();
+    final select = Completer<Object?>();
+    p.onSelect = (_) => select.future;
+    final c = SnpComputeController(platform: p, supported: true);
+    final chat = ChatController(api: NoAi(), threadId: 'late-select');
+    await tester.pumpWidget(MaterialApp(
+        home: ChangeNotifierProvider.value(
+            value: chat, child: ChatRoomPage(snpCompute: c))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('使用此 USB'));
+    await tester.pump();
+    await tester.tap(find.byTooltip('關閉 USB 確認'));
+    await tester.pumpAndSettle();
+    select.complete(p.sourceState);
+    await tester.pumpAndSettle();
+    expect(c.sourceConfirmed, false);
+    expect(p.runCalls, 0);
+    expect(find.byType(AlertDialog), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    c.dispose();
+    chat.dispose();
+    await p.stream.close();
+  });
+  testWidgets(
+      'USB insertion dialog can close, reopen, confirm and waits for send',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final p = ChatUsbPlatform();
+    final c = SnpComputeController(platform: p, supported: true);
+    final chat = ChatController(api: NoAi(), threadId: 'confirm');
+    final queries = SnpSets.alcohol
+        .parse(File(SnpSets.alcohol.assetPath!).readAsBytesSync());
+    await tester.pumpWidget(MaterialApp(
+        home: ChangeNotifierProvider.value(
+            value: chat,
+            child: ChatRoomPage(
+                snpCompute: c, snpSetLoader: (_) => Future.value(queries)))));
+    await tester.pumpAndSettle();
+    expect(find.text('USB 使用確認'), findsOneWidget);
+    expect(p.runCalls, 0);
+    await tester.tap(find.byTooltip('關閉 USB 確認'));
+    await tester.pumpAndSettle();
+    await c.refresh();
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(
+        tester
+            .widget<IconButton>(find.widgetWithIcon(IconButton, Icons.send))
+            .onPressed,
+        isNull);
+    await tester.tap(find.byKey(const ValueKey('usb-source-icon')));
+    await tester.pumpAndSettle();
+    expect(find.text('USB 使用確認'), findsOneWidget);
+    await tester.tap(find.text('使用此 USB'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(p.runCalls, 0);
+    await tester.enterText(find.byType(TextField), '我能喝酒嗎');
+    await tester.tap(find.byIcon(Icons.send));
+    await tester.pumpAndSettle();
+    expect(p.runCalls, 1);
+    expect(p.lastQueries.length, 143);
+    expect(find.text('我能喝酒嗎'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    c.dispose();
+    chat.dispose();
+    await p.stream.close();
+  });
   testWidgets(
       'USB header tooltip and bounded top settings never start computation',
       (tester) async {
@@ -66,6 +383,8 @@ void main() {
                 snpCompute: c, snpSetLoader: (_) => Future.value(queries)))));
     await tester.pumpAndSettle();
     final icon = find.byKey(const ValueKey('usb-source-icon'));
+    await tester.tap(find.text('使用此 USB'));
+    await tester.pumpAndSettle();
     expect(icon, findsOneWidget);
     expect(find.text('USB 已就緒'), findsOneWidget);
     expect(find.text('Debug：結果與分段計時'), findsNothing);
@@ -82,6 +401,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('資料夾：USB / gene'), findsOneWidget);
     await tester.tap(icon);
+    await tester.pumpAndSettle();
+    expect(find.text('USB 使用確認'), findsOneWidget);
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('開啟設定'));
     await tester.pumpAndSettle();
     expect(find.byType(BottomSheet), findsNothing);
     expect(
@@ -171,7 +495,9 @@ void main() {
     expect(p.runCalls, 0);
     expect(find.text('USB 離線 SNP'), findsNothing);
     expect(find.text('上一則對話'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('usb-source-icon')));
+    await tester.tap(find.text('使用此 USB'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('開啟設定'));
     await tester.pumpAndSettle();
     expect(find.textContaining('77 位點'), findsWidgets);
     expect(find.byType(SnpComputePage), findsNothing);
@@ -306,6 +632,8 @@ void main() {
     };
     await c.refresh();
     await tester.pumpAndSettle();
+    await tester.tap(find.text('使用此 USB'));
+    await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), '測試');
     await tester.tap(find.byIcon(Icons.send));
     await tester.pumpAndSettle();
@@ -335,6 +663,8 @@ void main() {
     await tester.pumpWidget(MaterialApp(
         home: ChangeNotifierProvider.value(
             value: chat, child: ChatRoomPage(snpCompute: c))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('使用此 USB'));
     await tester.pumpAndSettle();
     await chat.setTopic(ChatTopic.medication);
     await tester.pumpAndSettle();
@@ -401,10 +731,12 @@ void main() {
                           File(SnpSets.alcohol.assetPath!)
                               .readAsBytesSync()))))));
       await tester.pumpAndSettle();
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
       expect(find.text('USB 離線 SNP'), findsNothing);
       if (readiness == 'permission') {
         expect(find.textContaining('USB 待設定'), findsOneWidget);
-        await tester.tap(find.byKey(const ValueKey('usb-source-icon')));
+        await tester.tap(find.byTooltip('開啟設定'));
         await tester.pumpAndSettle();
         expect(find.text('授權'), findsOneWidget);
         expect(p.runCalls, 0);
@@ -458,6 +790,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('usb-source-icon')), findsOneWidget);
       expect(p.runCalls, 0);
+      await tester.tap(find.text('使用此 USB'));
+      await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField), '插入後才送出');
       await tester.tap(find.byIcon(Icons.send));
       await tester.pumpAndSettle();

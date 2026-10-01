@@ -518,6 +518,45 @@ class SnpComputeController extends ChangeNotifier {
   String? errorCode, selectedSourceId, _jobId, resultJobId;
   int completed = 0, total = 0, _revision = -1, _generation = 0;
   List<Map<Object?, Object?>> sources = const [], volumes = const [];
+  String? _confirmedSourceId;
+  int _attachmentGeneration = 0;
+  bool accessBusy = false;
+  bool get sourceConfirmed =>
+      selectedSourceId != null && _confirmedSourceId == selectedSourceId;
+  int get attachmentGeneration => _attachmentGeneration;
+  Set<String> get mountedUsbIds => volumes.isNotEmpty
+      ? volumes.map((v) => v['id'] as String).toSet()
+      : sources.map((s) => (s['volumeId'] ?? s['id']) as String).toSet();
+  void clearUsbConfirmation() {
+    _confirmedSourceId = null;
+    _notify();
+  }
+
+  Future<bool> confirmUsbSource({bool Function()? stillActive}) async {
+    final id = selectedSourceId, epoch = _attachmentGeneration;
+    if (id == null || busy || accessBusy || _disposed) return false;
+    accessBusy = true;
+    _notify();
+    try {
+      final snapshot = await _platform.selectSource(id);
+      if (_disposed ||
+          epoch != _attachmentGeneration ||
+          stillActive?.call() == false) {
+        return false;
+      }
+      _applySources(snapshot);
+      if (selectedSourceId != id) return false;
+      _confirmedSourceId = id;
+      return true;
+    } catch (e) {
+      if (!_disposed && epoch == _attachmentGeneration) _fail(e);
+      return false;
+    } finally {
+      accessBusy = false;
+      _notify();
+    }
+  }
+
   List<SnpResult> results = const [];
   List<SnpLocusResult> locusResults = const [];
   List<SnpLocus> _loci = const [];
@@ -582,6 +621,7 @@ class SnpComputeController extends ChangeNotifier {
 
   void _fail(Object e) {
     if (_disposed) return;
+    _confirmedSourceId = null;
     if (busy) unawaited(_platform.cancel().catchError((Object _) {}));
     _generation++;
     _jobId = null;
@@ -607,6 +647,26 @@ class SnpComputeController extends ChangeNotifier {
       _text(x, 'id');
       _text(x, 'label');
     }
+    for (final x in parsed) {
+      if (x.containsKey('volumeId') &&
+          (x['volumeId'] is! String || (x['volumeId'] as String).isEmpty)) {
+        throw const FormatException('Invalid source volume');
+      }
+    }
+    for (final x in pv) {
+      final scopes = x['authorizationScopes'];
+      if (scopes != null &&
+          (scopes is! List || scopes.any((s) => s is! String || s.isEmpty))) {
+        throw const FormatException('Invalid authorization scope');
+      }
+    }
+    final nextIds = pv.isNotEmpty
+        ? pv.map((v) => v['id'] as String).toSet()
+        : parsed.map((s) => (s['volumeId'] ?? s['id']) as String).toSet();
+    if (!setEquals(nextIds, mountedUsbIds)) {
+      _attachmentGeneration++;
+      _confirmedSourceId = null;
+    }
     if (parsed.map((s) => s['id']).toSet().length != parsed.length ||
         pv.any((v) => v['authorized'] is! bool)) {
       throw const FormatException(
@@ -618,6 +678,7 @@ class SnpComputeController extends ChangeNotifier {
       throw const FormatException('Invalid source selection');
     }
     if (selected != selectedSourceId) {
+      _confirmedSourceId = null;
       _generation++;
       _jobId = null;
       _clearOutput();
@@ -645,22 +706,36 @@ class SnpComputeController extends ChangeNotifier {
   }
 
   Future<void> requestAccess(String id) async {
+    if (busy || accessBusy || _disposed || !mountedUsbIds.contains(id)) return;
+    final epoch = _attachmentGeneration;
+    accessBusy = true;
+    _notify();
     try {
       final v = await _platform.requestAccess(id);
-      if (!_disposed) _applySources(v);
+      if (!_disposed && epoch == _attachmentGeneration) _applySources(v);
     } catch (e) {
-      _fail(e);
+      if (!_disposed && epoch == _attachmentGeneration) _fail(e);
+    } finally {
+      accessBusy = false;
+      _notify();
     }
   }
 
   Future<void> selectSource(String id) async {
+    if (_disposed || accessBusy) return;
+    final epoch = _attachmentGeneration;
+    accessBusy = true;
+    _notify();
     if (busy) await cancel();
     _clearOutput();
     try {
       final v = await _platform.selectSource(id);
-      if (!_disposed) _applySources(v);
+      if (!_disposed && epoch == _attachmentGeneration) _applySources(v);
     } catch (e) {
-      _fail(e);
+      if (!_disposed && epoch == _attachmentGeneration) _fail(e);
+    } finally {
+      accessBusy = false;
+      _notify();
     }
   }
 
@@ -749,6 +824,12 @@ class SnpComputeController extends ChangeNotifier {
         status = state;
         errorCode = m['errorCode'] as String?;
         selectedSourceId = null;
+        _confirmedSourceId = null;
+        if (errorCode == 'USB_REMOVED') {
+          _attachmentGeneration++;
+          sources = const [];
+          volumes = const [];
+        }
         _notify();
         return;
       }

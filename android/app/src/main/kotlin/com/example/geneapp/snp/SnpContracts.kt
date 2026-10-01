@@ -7,6 +7,25 @@ data class SnpQuery(val id: String, val sequence: String, val ref: String, val a
 data class SnpLocus(val id: String,val rsId: String,val chromosome: String,val position: Long,
                     val ref: String,val sequences: List<String>)
 data class SnpSource(val folder: GeneEntry, val idx: GeneEntry, val ids: GeneEntry)
+/** Candidates MUST already come from authorized mounted trees, never from preferences. */
+object SnpUsbAccess {
+    fun rootDocumentId(volume: String, mounted: Set<String>): String {
+        val id = mounted.singleOrNull { it.equals(volume, true) }
+            ?: throw SnpFailure("USB_REMOVED")
+        if (id.isBlank() || id.contains(':') || id.equals("primary", true)) throw SnpFailure("USB_REMOVED")
+        return "$id:"
+    }
+    fun scopeLabel(documentId: String): String = documentId.substringAfter(':', "").let {
+        if (it.isEmpty()) "USB 根目錄" else "子資料夾：$it"
+    }
+    fun restore(current: String?, authorizedPairs: Map<String, String>, remembered: Map<String, String>): String? {
+        if (current != null && authorizedPairs.containsKey(current)) return current
+        val matches = authorizedPairs.filter { (source, volume) ->
+            remembered.entries.any { it.key.equals(volume, true) && it.value == source }
+        }.keys
+        return matches.singleOrNull() ?: if (matches.isEmpty()) authorizedPairs.keys.singleOrNull() else null
+    }
+}
 object SnpContracts {
     fun locusMode(value: Any?): Boolean = when(value) {
         null,"query" -> false

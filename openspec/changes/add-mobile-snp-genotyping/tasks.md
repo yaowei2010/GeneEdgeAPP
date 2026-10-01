@@ -54,7 +54,14 @@
 
 ## 9. USB插入確認與根目錄授權恢復
 
-- [ ] 9.1 在本組程式修改前，將已安裝USB圖示版的相關五個dirty檔與本次四份規格限定Git備份到遠端codex/分支，核對commit檔案清單與git ls-remote SHA，排除其他功能／USB個人資料，記錄可回復SHA。
-- [ ] 9.2 依賴9.1，以Android失敗測試實作 USB root authorization and source restoration／USB插入確認與根目錄授權恢復 的原生部分：mounted removable UUID根目錄initial URI、首次顯式系統授權／保存唯讀grant、舊子目錄範圍明示、discover保留當前／恢復同卷有效metadata／唯一pair自動選／多组未選不猜；只保存來源metadata，撤權／來源消失／primary拒絕，掃描深度16／10000項及取消保持。於SnpContractsTest.kt與相關Android tests驗證恢復策略、root定位與失效，保留舊USB回歸。
-- [ ] 9.3 接續9.2，以Flutter controller／test/snp_chat_panel_test.dart失敗測試實作 Dismissible USB insertion confirmation：每次掛載UUID或首次已掛載自動一個可關閉AlertDialog，返回／點外部／取消不確認、不反覆彈出、不run／HTTP，USB圖示可重開、設定箭頭仍展開上方區；已有grant沿用、未授權按鈕開系統picker並展示實際範圍，多USB／多來源明確選擇，僅確認有效來源後才能聊天送出77位點。驗證refresh／授權返回去重、鍵盤無overflow、busy／logout／拔除／dispose及late清理，原泡泡、debug、JSON與no-fallback不變。
-- [ ] 9.4 接續9.3更新docs/mobile-snp-genotyping.md的確認／關閉／重開、根目錄與子目錄限制、授權與來源恢復操作、備份SHA；執行Flutter全套tests／analyze、Android SNP／USB tests及ARM64 build，記錄fake與實機狀態，不自動安裝。只有使用者要求時install -r；真實USB3.3未驗證仍未完成。
+- [x] 9.1 在本組程式修改前，將已安裝USB圖示版的相關五個dirty檔與本次四份規格限定Git備份到遠端codex/分支，核對commit檔案清單與git ls-remote SHA，排除其他功能／USB個人資料，記錄可回復SHA。
+- [x] 9.2 依賴9.1，以Android失敗測試實作 USB root authorization and source restoration／USB插入確認與根目錄授權恢復 的原生部分：mounted removable UUID根目錄initial URI、首次顯式系統授權／保存唯讀grant、舊子目錄範圍明示、discover保留當前／恢復同卷有效metadata／唯一pair自動選／多组未選不猜；只保存來源metadata，撤權／來源消失／primary拒絕，掃描深度16／10000項及取消保持。於SnpContractsTest.kt與相關Android tests驗證恢復策略、root定位與失效，保留舊USB回歸。
+- [x] 9.3 接續9.2，以Flutter controller／test/snp_chat_panel_test.dart失敗測試實作 Dismissible USB insertion confirmation：每次掛載UUID或首次已掛載自動一個可關閉AlertDialog，返回／點外部／取消不確認、不反覆彈出、不run／HTTP，USB圖示可重開、設定箭頭仍展開上方區；已有grant沿用、未授權按鈕開系統picker並展示實際範圍，多USB／多來源明確選擇，僅確認有效來源後才能聊天送出77位點。驗證refresh／授權返回去重、鍵盤無overflow、busy／logout／拔除／dispose及late清理，原泡泡、debug、JSON與no-fallback不變。
+- [x] 9.4 接續9.3更新docs/mobile-snp-genotyping.md的確認／關閉／重開、根目錄與子目錄限制、授權與來源恢復操作、備份SHA；執行Flutter全套tests／analyze、Android SNP／USB tests及ARM64 build，記錄fake與實機狀態，不自動安裝。只有使用者要求時install -r；真實USB3.3未驗證仍未完成。
+
+## 10. 插入即確認與精簡JSON
+
+- [ ] 10.1 在本組程式修改前，將目前已安裝USB確認版的相關dirty程式／tests／文件及本次四份規格限定Git備份到遠端codex/分支；核對git status、commit檔案清單及git ls-remote SHA，記錄回復位置，排除其他功能與個人USB資料。
+- [ ] 10.2 依賴10.1，以失敗測試實作 Topic-independent USB insertion prompting／插入即確認與精簡JSON 的掛載提示部分：檢查並修正controller通知、原生掛載／discover與post-frame／路由時序，使前景idle插入在未選主題、無set、載入中或錯誤時皆自動顯示一次確認，不等待主題tap、不自選酒精。以test/snp_chat_panel_test.dart及controller／必要Android tests驗證首次已有USB、refresh去重、busy後及路由返回處理、拔除與late清理、根目錄授權行為不變、不run／HTTP，來源掃描尚未完成不可冒充ready。
+- [ ] 10.3 接續10.2，以失敗測試實作 Compact API JSON presentation and visibility preference 及 Explicit bounded chat diagnostics：聊天室成功卡片只有有界可捲動API JSON、簡短完成與顯式複製，移除逐位點／posterior／debug全文；上方「顯示 API JSON」預設true、只保存boolean、載入前不展示正文且late偏好不覆蓋新切換，關閉使現在及後續正文／語意節點消失，重開頁沿用偏好不恢復結果、重新顯示不重算。上方顯式診斷視窗保留debug／分段計時、研究警示與複製，失效／登出／dispose關閉。以widget／controller tests驗證77位點JSON契約未改、debug off無報告、隱藏與busy只影響呈現、無HTTP／TTS／基因結果保存／自動clipboard。
+- [ ] 10.4 接續10.3更新docs/mobile-snp-genotyping.md的插入免主題操作、精簡JSON／隱藏偏好、主動查看診斷、備份SHA及實機狀態；執行全套Flutter tests／analyze、Android SNP／USB tests及ARM64 build，區分fake／fixture與Pixel真實掛載驗收。只在使用者要求時安裝，3.3真實USB計數／效能未驗證保持未完成。

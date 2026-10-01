@@ -13,6 +13,16 @@ Non-Goals：手機內部 combined 資料、複製完整 USB 資料、FASTQ 建�
 
 ## Decisions
 
+### 插入即確認與精簡JSON
+
+此節優先於下面已完成的聊天室結果明細展示契約。前景聊天室偵測mounted removable USB時，未選主題、主題無set、set載入中／失敗皆須彈出USB確認，不能等待主題選擇的setState才處理。先以controller／widget及Android事件流程檢查掛載通知、discover／scan、post-frame排程與路由就緒；修正實際造成延遲的環節，必要時使已確認掛載的volumes狀態先於來源掃描完成通知，避免大型USB掃描阻塞確認。不得用自動選酒精掩蓋問題，不新增背景輪詢服務；畫面返回前景須重新核對掛載狀態。已確認掛載、尚未找出pair時視窗顯示掃描／待來源，不冒充ready。保留同次掛載去重、關閉不重彈、圖示重開、busy延後到idle、拔除與late抑制，不在其他路由上強制彈窗；返回聊天室時仍掛載的新USB才處理。
+
+`SnpChatResultCard`成功狀態只呈現API request JSON、簡短完成狀態與顯式複製操作，JSON區域有界可捲動，避免77位點輸出撑滿訊息流；不渲染77張明細、posterior列表或debug全文。上方既有設定新增「顯示 API JSON」開關，新安裝預設true，只在私有preferences保存boolean；載入完成前保守不展示正文，遲到的偏好載入不能覆蓋使用者剛切換的值。關閉時當前及之後成功卡片只留簡短「已完成，API JSON 已隱藏」，不將正文留在隱藏widget／語意節點；重新開啟僅展示仍有效最新結果，不重算／送API／自動複製。重開APP沿用偏好但不恢復基因結果。顯示偏好可在運算中切換，僅影響呈現，不改來源、主題、debug快照或job。
+
+debug計算開關與C分段計時保持不變。若當前最新結果有debugReport，上方設定提供「查看 debug／分段計時」的顯式操作，開啟有界可捲動診斷視窗，內含研究警示、分段時間與顯式複製；debug off無報告。取消／拔除／來源或主題變更／登出／dispose清空結果並關閉失效診斷視窗，晚到事件不能恢復；不把診斷全文重新放回聊天卡片。
+
+範圍內：前景掛載偵測時序、與set解耦的插入確認、精簡結果JSON、有界展示、顯示偏好及主動查看診斷、測試文件與修改前Git備份。範圍外：自動LLM／HTTP傳輸、改JSON欄位或C模型、基因資料持久化、自動系統授權、舊USB匯入重寫、背景監控。顯示隱藏不是加密或刪除記憶體結果；使用者主動查看／複製仍可見敏感資料。
+
 ### USB插入確認與根目錄授權恢復
 
 此節為最新優先介面契約，追加可關閉的AlertDialog；USB圖示點擊改為重新開啟確認視窗，原設定箭頭仍展開上方來源／debug設定。初次進入聊天室已有掛載USB也視為一次插入，依掛載UUID集合辨識新裝置與拔除，重複refresh／set載入／系統授權返回不重複彈窗。對話框提供明確關閉／取消、Android返回及點外部關閉；同一次掛載關閉後不再自動彈出，重新插入才再顯示。多USB顯示可讀裝置選擇，不猜第一支；busy不開新的來源修改視窗，待idle後處理仍掛載的新裝置。拔除／logout／頁面dispose關閉相關視窗，post-frame與授權future使用掛載generation抑制晚到資料。視窗內容有界可捲動，鍵盤開啟不overflow。
@@ -99,6 +109,7 @@ asset 載入顯示 loading／ready／error 與 set 名稱、版本、筆數，�
 
 ## Implementation Contract
 
+- 插入即確認與精簡JSON驗收：先寫失敗tests涵蓋「無USB→插入→不碰主題即一個AlertDialog」、首次已有USB／無set／pending asset／error及刷新去重、busy後處理、路由返回與拔除清理。成功77位點結果只見有界API JSON，不見逐位點／posterior／debug全文；上方切換隱藏使目前與下次JSON正文和語意節點消失、重開頁沿用boolean但不恢復結果、重新显示不增加run／HTTP／clipboard。明確查看診斷仍有分段時間、debug off無報告、失效關閉診斷。以`test/snp_chat_panel_test.dart`及controller／必要Android tests驗證，執行全套Flutter test／analyze、Android SNP／USB tests與ARM64 build；Pixel真實插入時序、SAF／USB效能另記錄，不以fake或建置當已完成3.3。
 - USB插入確認最新驗收：`test/snp_chat_panel_test.dart`及controller tests先失敗驗證插入／首次已掛載僅一個可關閉AlertDialog、refresh與授權返回不重彈、關閉不確認／不run／不HTTP、圖示可重開、拔除／dispose／logout清理及late不復活；確認來源後才能原composer送出，仍143參考→77位點／JSON，主題set與busy guard不變。原設定箭頭／debug仍在上方，確認視窗不取代聊天室。Android `SnpContractsTest.kt`與相關tests驗證root initial URI、primary拒絕、保存唯讀權限、目前選擇／同UUID有效記錄／唯一pair／多組未選恢復順序、被撤權與移除來源不恢復、scanner範圍與資源上限不放寬。首次根目錄仍需系統確認，私有儲存只新增來源metadata，禁止保存基因結果；fake／fixture／真實PixelUSB分開記錄。
 - USB icon最新验收：`test/snp_chat_panel_test.dart`先定義無USB無icon、插入顯示icon、hover與long-press顯示選定label且不含sourceId／URI、展開上方下拉設定不啟動工作、多組未選不猜來源、拔除清除label／icon；保留原聊天泡泡，只有送出才計算77位點，busy禁用來源／debug、取消與stale guard不變。不得把偵測icon等同已授權就緒。
 - 2026-10-01優先介面驗收：移除USB離線模式開關，不以SnpChatControls取代聊天歷史；USB來源狀態與送出路由依上述「USB運算來源與原聊天訊息流」。`test/snp_chat_panel_test.dart`須驗證無需切模式、舊泡泡可見、輸入問題→C收到143參考→77/77→原訊息流有暫存文字／結果／JSON；禁止HTTP／持久化／TTS。另驗證未授權／多來源／無set／載入錯誤禁用、busy鎖定、取消與拔除不fallback、stale不復活、沒有USB時原sendUserMessage。模型與serializer既有tests維持通過。

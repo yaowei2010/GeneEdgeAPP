@@ -4,9 +4,9 @@
 
 ## 操作
 
-1. 插入 USB，在原本聊天室選「酒精」主題。既有上方下拉設定的標頭顯示 USB 圖示，收合時仍可見；就緒是綠色並顯示「USB 已就緒」，未授權／未選／set未就緒則顯示待設定文字與橘色。不需要USB離線模式開關、不切換聊天畫面、不需完成舊匯入；插入本身不開始計算。
-2. 滑鼠停留或手機長按 USB 圖示，提示已選定的可讀資料夾名稱與就緒狀態，不顯示內部ID／SAF URI；多組未選時只提示待授權或選取，不猜第一組。點擊圖示或原設定按鈕展開同一個上方下拉區，查看set、來源授權與debug；內容可捲動，鍵盤開啟時高度受限，訊息流不再放常駐來源設定卡片。首次授予資料夾唯讀權限；來源必須是掛載removable UUID，拒絕手機primary儲存。需同目錄精確雙檔combined_idx_all.txt與combined_ids_all.txt；單一來源沿用自動選定，多組時自行選擇。提示／展開均不計算；失效清除舊資料夾提示，掃描確認無USB後移除圖示。
-3. 原主題自動帶入set，確認143筆參考／77位點、版本alcohol-set143-k150-v1。USB存在但未授權、多組未選、主題無set、載入未完成或失敗時送出不可用，不改走BLE／Local JSON／雲端。沒有USB時原本聊天路徑不變。
+1. 插入 USB（或開聊天室時已有 USB），自動顯示「USB 使用確認」。可用關閉、取消、返回或點外部關閉，同次插入不反覆彈出；关闭後仍顯示上方 USB 圖示，但不能送出 USB 計算。點圖示可重開；點「使用此 USB」只確認來源，插入、授權、確認都不開始計算。
+2. 確認頁預設位置是「USB 根目錄」。已有有效唯讀授權先沿用；首次或需要擴大範圍時按「授權 USB 根目錄」，系統選擇器預選該 USB 最外層，仍須親自確認授權，APP 不代按。若 provider 限制根目錄，依實際允許資料夾授權；舊子資料夾權限會明示「子資料夾」，不冒充根目錄。只讀掛載 removable UUID，不讀手機 primary。授權範圍內搜尋同目錄精確雙檔 combined_idx_all.txt 與 combined_ids_all.txt，維持深度16／10000項限制。保存唯讀grant與來源URI metadata，不保存基因資料；重新插入恢復同USB仍有效的來源，否則只有唯一pair才自選，多USB／多組未選不猜。
+3. 滑鼠停留或手機長按 USB 圖示，提示可讀資料夾名稱與狀態，不顯示ID／SAF URI。未確認顯示「USB 待確認」，確認且set ready才顯示綠色「USB 已就緒」。原設定箭頭仍展開上方set／來源／debug，內容可捲動且鍵盤開啟高度受限。選「酒精」自動带入143筆參考／77位點、版本alcohol-set143-k150-v1；USB未確認、未授權、多組未選、無set或載入失敗時送出不可用，不改走BLE／Local JSON／雲端。拔除、來源變更或登出清除使用確認，授權晚到不能恢復已拔除來源；沒有USB時原聊天路徑不變。
 4. 若需耗時，先在展開操作啟用「Debug：結果與分段計時」（預設關閉）。直接在原輸入框輸入問題並送出，以文字／主題／set／來源／debug快照執行C；訊息流顯示本次使用者泡泡及計算回覆，原聊天泡泡保留。進度到77/77，工作中锁定主題／來源／debug與重送，可取消。
 5. 同訊息流的完成卡片包含每位點唯一GT或no-call、四類計數、10候選posterior，以及debug啟用時的分段時間。展開API JSON或按「複製 API JSON」；debug關閉仍可取得JSON。複製是顯式操作，基因資訊會進剪貼簿。
 6. USB文字／結果是暫存UI，不寫聊天歷史、不自動TTS／HTTP／LLM；只保留最新USB工作的一組訊息，下一次送出替換。取消、拔除、變更來源／主題、登出使成功結果與匯出失效，晚到事件不可還原，失敗不自動改送網路。取消／失敗只顯示已量測elapsedMs，不宣稱完成。
@@ -35,7 +35,7 @@ totalMs从worker開始到結果結構建置完成，不含排程等待、Flutter
 
 ## Pixel／真實USB驗收
 
-1. 在原聊天室選酒精主題、插入USB，確認上方標頭USB圖示、長按資料夾提示及就緒／待設定文字；展開上方設定確認77位點／143參考，必要時授權與來源選擇。不能有離線開關或換掉原訊息流，原聊天泡泡應仍可查看；不使用舊匯入入口。
+1. 在原聊天室選酒精、插入USB，確認自動出現可關閉視窗；取消／返回／點外部後不反覆彈出且不能送出，點上方USB圖示重開。首次根目錄授權檢查系統picker預選USB最外層，再手動同意；拔插後檢查有效grant與來源恢復、不必再挑資料夾，但仍須「使用此 USB」。舊子目錄grant應明示實際範圍，多來源未選不能送出。長按查看資料夾，設定箭頭展開77位點／143參考及debug；原聊天泡泡保留，不使用舊匯入入口。
 2. 開啟debug、輸入問題並送出，確認UI仍可取消；完成應77/77、77列與相同set版本。核對API三份列表一致、每rsID唯一、input77、used加no_call等於77；複製診斷核對各階段總和，no-call不等於讀取失敗。
 3. 關閉debug再跑，對照計數、posterior與GT完全一致；分段報告與新增基因結果日誌應不出現。重跑快取不同時不可直接把时间差歸因於演算法。
 4. 運算中按取消、另次運算中拔除USB，確認不出現完成結果／舊報告；重新接入後重新掃描與選來源。
@@ -73,6 +73,7 @@ GT輸出0/0、0/1、1/1；零深度、低深度、最高posterior低於門檻或
 
 - 原版Git備份：457fba7，遠端分支codex/backup-before-mobile-snp-20260930。
 - USB圖示修改前備份：2ad0a2d23b6b802db34a434c608c121bdb82ffe9，遠端分支codex/backup-before-usb-icon-20261001，已核對遠端SHA。包含已安裝原訊息流版的提交歷史；本次備份提交只新增四個相關規格檔的追加內容，不含其他功能或USB個人資料。
+- USB確認修改前備份：74a3ca8c31589a4c1202f5ee4389200a4fb086a3，遠端分支codex/backup-before-usb-confirm-20261001，已核對遠端SHA；限定已安裝圖示版及本次相關規格共8個檔案，不含其他功能或USB個人資料。
 - debug／set修改前Git備份：c1c038e3cf788a304a0677031edb9e420fc7a9e0，遠端分支codex/backup-before-snp-debug-20260930，已核對遠端SHA。
 - 聊天室／joint修改前Git備份：8f0ef03a3fcc3ea7506aa27e860492bafabed701，遠端分支codex/backup-before-locus-chat-20260930，限定23個相關檔案且遠端SHA已核對。
 - 原聊天室訊息流修正前Git備份：ce71eef62bd501a1bfa76ff588bb1c94f95fadcf，遠端分支codex/backup-before-usb-chat-flow-20261001，限定28個相關檔案且遠端SHA已核對，不含其他變更或USB個人資料。
@@ -83,4 +84,5 @@ GT輸出0/0、0/1、1/1；零深度、低深度、最高posterior低於門檻或
 - 新增snp_locus_test.c驗證四等位共同去重、partition、雙方向、40bit／超4GiB、58/59邊界、取消與上限；locus_genotype_model_test.c以獨立long double計算核對10候選posterior、全部GT含C/G、低深度／並列／參數錯誤。JNI新增joint77列、debug on/off結果一致、caller FD所有權與逐位點分解驗證。上述均為人工fixture。
 - 前次「原聊天室USB送出」版已依使用者要求install -r成功安裝至Pixel 10 Pro並啟動。2026-10-01最新「上方USB圖示／下拉設定」版ARM64 debug APK位於build/app/outputs/flutter-apk/app-debug.apk，已依使用者要求以install -r安裝至Pixel 10 Pro（61210DLCH001H5），回傳Success；MainActivity啟動成功且確認APP程序存在，保留原APP資料。真實USB seek、取消／拔除、記憶體、耗時與結果對照仍待驗收，tasks3.3保持未勾選；不得把建置／安裝或人工fixture當真實基因資料正確性驗證。
 - 最新圖示版採測試先行：先確認缺少USB圖示而失敗，再完成實作。Flutter全套76項通過、analyze無問題；新增hover／long-press、上方設定雙入口、鍵盤捲動無overflow、舊tooltip失效、多來源不猜與不自動計算測試。本次沒有更動C／Android演算法，這些為widget／fake驗證，不是真實USB計數效能量測。
+- 2026-10-01最新確認版Flutter全套87項、Android SNP19項／USB10項通過，flutter analyze無問題，ARM64 debug APK建置成功（build/app/outputs/flutter-apk/app-debug.apk）。新增取消／返回／點外部與重開、授權返回去重、多USB／子資料夾範圍、根目錄授權重用、未確認阻擋送出、拔除／關閉後late回覆拒絕、鍵盤與dispose測試。Android純契約測試涵蓋root URI定位／primary拒絕、目前來源／同卷記錄／唯一pair恢復順序及失效拒絕；實際SAF picker初始定位、系統保存grant與重插仍需Pixel驗收。本版未改C模型或API；已依使用者要求以install -r安裝至Pixel 10 Pro（61210DLCH001H5），回傳Success，MainActivity冷啟動Status: ok且APP程序存在，保留原APP資料。不把安裝成功或fake／單元測試當實機授權或基因驗證，3.3保持未完成。
 - 尚未新增LLM傳輸；結果與可用JSON只在本機聊天室顯示。不能宣稱整條到LLM的實機流程完成。

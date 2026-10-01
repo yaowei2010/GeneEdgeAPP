@@ -30,6 +30,7 @@ class SnpChatUsbStatus {
       selectedLabel != null &&
       set.available &&
       queries != null &&
+      controller.sourceConfirmed &&
       error == null;
   String get folderHint => selectedLabel == null
       ? 'USB 已偵測，請授權或選取資料夾\n$status'
@@ -39,11 +40,185 @@ class SnpChatUsbStatus {
       : error ??
           (queries == null
               ? 'USB 待設定：正在載入 SNP set…'
-              : !ready
+              : selectedLabel == null
                   ? 'USB 待設定：請授權或選取資料夾'
-                  : controller.busy
-                      ? 'USB 計算中'
-                      : 'USB 已就緒');
+                  : !controller.sourceConfirmed
+                      ? 'USB 待確認：點擊 USB 圖示'
+                      : controller.busy
+                          ? 'USB 計算中'
+                          : 'USB 已就緒');
+}
+
+class SnpUsbConfirmationDialog extends StatefulWidget {
+  const SnpUsbConfirmationDialog(
+      {super.key, required this.controller, required this.stillActive});
+  final SnpComputeController controller;
+  final bool Function() stillActive;
+  @override
+  State<SnpUsbConfirmationDialog> createState() =>
+      _SnpUsbConfirmationDialogState();
+}
+
+class _SnpUsbConfirmationDialogState extends State<SnpUsbConfirmationDialog> {
+  String? _volumeId;
+  bool _changing = false;
+  List<Map<Object?, Object?>> get _volumes =>
+      widget.controller.volumes.isNotEmpty
+          ? widget.controller.volumes
+          : widget.controller.mountedUsbIds
+              .map((id) => <Object?, Object?>{
+                    'id': id,
+                    'label': 'USB',
+                    'authorized': true
+                  })
+              .toList();
+  @override
+  void initState() {
+    super.initState();
+    final c = widget.controller;
+    final selected = c.sources.where((s) => s['id'] == c.selectedSourceId);
+    if (selected.isNotEmpty) {
+      _volumeId = (selected.first['volumeId'] ??
+          (c.volumes.isEmpty ? selected.first['id'] : null)) as String?;
+    }
+    if (_volumeId == null && _volumes.length == 1) {
+      _volumeId = _volumes.single['id'] as String;
+    }
+  }
+
+  Future<void> _change(Future<void> Function() action) async {
+    if (_changing || widget.controller.busy || widget.controller.accessBusy) {
+      return;
+    }
+    setState(() => _changing = true);
+    try {
+      await action();
+    } finally {
+      if (mounted) setState(() => _changing = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+      animation: widget.controller,
+      builder: (context, _) {
+        final c = widget.controller, volumes = _volumes;
+        final chosen = volumes.where((v) => v['id'] == _volumeId);
+        final volume = chosen.isEmpty ? null : chosen.single;
+        final sources = c.sources
+            .where((s) =>
+                volume != null &&
+                (s['volumeId'] == _volumeId ||
+                    (s['volumeId'] == null && volumes.length == 1)))
+            .toList();
+        final selected = sources.any((s) => s['id'] == c.selectedSourceId)
+            ? c.selectedSourceId
+            : null;
+        final locked = _changing || c.busy || c.accessBusy;
+        final scopes =
+            (volume?['authorizationScopes'] as List?)?.cast<String>() ??
+                const <String>[];
+        return AlertDialog(
+          title: Row(children: [
+            const Expanded(child: Text('USB 使用確認')),
+            IconButton(
+                tooltip: '關閉 USB 確認',
+                icon: const Icon(Icons.close),
+                onPressed: () => Navigator.of(context).pop())
+          ]),
+          content: SizedBox(
+              width: 380,
+              child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                      maxHeight: MediaQuery.sizeOf(context).height * .45),
+                  child: SingleChildScrollView(
+                      child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                        const Text('預設位置：USB 根目錄'),
+                        const Text('首次仍需在系統頁面確認唯讀授權；若根目錄受限制，可授權含資料的子資料夾。'),
+                        if (volumes.length > 1)
+                          DropdownButtonFormField<String>(
+                              key: const ValueKey('usb-confirm-volume'),
+                              initialValue: volume?['id'] as String?,
+                              isExpanded: true,
+                              decoration:
+                                  const InputDecoration(labelText: 'USB 裝置'),
+                              items: volumes
+                                  .map((v) => DropdownMenuItem(
+                                      value: v['id'] as String,
+                                      child: Text(v['label'] as String,
+                                          overflow: TextOverflow.ellipsis)))
+                                  .toList(),
+                              onChanged: locked
+                                  ? null
+                                  : (id) => setState(() => _volumeId = id))
+                        else if (volume != null)
+                          Text(volume['label'] as String),
+                        if (volume != null) ...[
+                          Text(volume['authorized'] == true
+                              ? '沿用唯讀授權：${scopes.isEmpty ? '已授權資料夾' : scopes.join('、')}'
+                              : '尚未授權 USB 資料夾'),
+                          if (c.volumes.isNotEmpty)
+                            TextButton.icon(
+                                onPressed: locked
+                                    ? null
+                                    : () => _change(
+                                        () => c.requestAccess(_volumeId!)),
+                                icon: const Icon(Icons.folder_open),
+                                label: const Text('授權 USB 根目錄')),
+                          if (sources.isEmpty)
+                            const Text(
+                                '授權後會搜尋同資料夾的 combined_ids_all.txt 與 combined_idx_all.txt；尚未找到可用來源。'),
+                          if (sources.isNotEmpty)
+                            DropdownButtonFormField<String>(
+                                key: ValueKey(
+                                    'confirm-source-$_volumeId-$selected'),
+                                initialValue: selected,
+                                isExpanded: true,
+                                decoration: const InputDecoration(
+                                    labelText: 'gene dongle 資料夾'),
+                                items: sources
+                                    .map((s) => DropdownMenuItem(
+                                        value: s['id'] as String,
+                                        child: Text(s['label'] as String,
+                                            overflow: TextOverflow.ellipsis)))
+                                    .toList(),
+                                onChanged: locked
+                                    ? null
+                                    : (id) {
+                                        if (id != null) {
+                                          unawaited(_change(
+                                              () => c.selectSource(id)));
+                                        }
+                                      }),
+                        ],
+                        if (locked)
+                          const Padding(
+                              padding: EdgeInsets.all(8),
+                              child: LinearProgressIndicator()),
+                        if (c.errorCode != null) Text('USB 狀態：${c.errorCode}'),
+                        const Text('確認或關閉都不會計算；確認後送出聊天訊息才開始 SNP 計算。'),
+                      ])))),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('取消')),
+            FilledButton(
+                onPressed: locked || selected == null
+                    ? null
+                    : () async {
+                        final used = await c.confirmUsbSource(
+                            stillActive: widget.stillActive);
+                        if (used && context.mounted && widget.stillActive()) {
+                          Navigator.of(context).pop();
+                        }
+                      },
+                child: const Text('使用此 USB')),
+          ],
+        );
+      });
 }
 
 class SnpChatJobCard extends StatelessWidget {

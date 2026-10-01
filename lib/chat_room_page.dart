@@ -49,6 +49,10 @@ class _ChatRoomPageState extends State<ChatRoomPage>
   ChatTopic? _snpTopic;
   bool _usbAttached = false;
   ChatMessage? _usbMessage;
+  final Set<String> _usbPrompted = {};
+  DialogRoute<void>? _usbDialog;
+  Set<String> _dialogUsbIds = {};
+  bool _usbPromptScheduled = false;
   bool get _usesUsb =>
       _snp.supported &&
       (_snp.sources.isNotEmpty || _snp.volumes.isNotEmpty || _snp.busy);
@@ -64,6 +68,7 @@ class _ChatRoomPageState extends State<ChatRoomPage>
       !_snp.busy &&
       _snpSet.available &&
       _snpQueries != null &&
+      _snp.sourceConfirmed &&
       _snp.selectedSourceId != null;
   void _snpChanged() {
     if (!mounted) return;
@@ -76,7 +81,66 @@ class _ChatRoomPageState extends State<ChatRoomPage>
       if (attached) unawaited(_loadSnpSet());
     }
     if (_snp.status == 'idle' && _snp.total == 0) _usbMessage = null;
+    final ids = _snp.mountedUsbIds;
+    _usbPrompted.retainAll(ids);
+    if (_usbDialog != null && !_dialogUsbIds.every(ids.contains)) {
+      _closeUsbDialog();
+    }
+    _scheduleUsbPrompt();
     setState(() {});
+  }
+
+  void _closeUsbDialog() {
+    final route = _usbDialog;
+    _usbDialog = null;
+    if (route == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (route.isActive) route.navigator?.removeRoute(route);
+    });
+  }
+
+  void _scheduleUsbPrompt() {
+    if (_usbPromptScheduled ||
+        _usbDialog != null ||
+        _snp.busy ||
+        !_snp.mountedUsbIds.any((id) => !_usbPrompted.contains(id))) {
+      return;
+    }
+    _usbPromptScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _usbPromptScheduled = false;
+      if (!mounted ||
+          _snp.busy ||
+          ModalRoute.of(context)?.isCurrent != true ||
+          !_snp.mountedUsbIds.any((id) => !_usbPrompted.contains(id))) {
+        return;
+      }
+      _openUsbConfirmation();
+    });
+  }
+
+  void _openUsbConfirmation() {
+    if (!mounted ||
+        _snp.busy ||
+        _usbDialog != null ||
+        _snp.mountedUsbIds.isEmpty) {
+      return;
+    }
+    _dialogUsbIds = Set.of(_snp.mountedUsbIds);
+    _usbPrompted.addAll(_dialogUsbIds);
+    late final DialogRoute<void> route;
+    route = DialogRoute<void>(
+        context: context,
+        barrierDismissible: true,
+        builder: (_) => SnpUsbConfirmationDialog(
+            controller: _snp,
+            stillActive: () =>
+                mounted && identical(_usbDialog, route) && route.isCurrent));
+    _usbDialog = route;
+    unawaited(Navigator.of(context).push(route).whenComplete(() {
+      if (identical(_usbDialog, route)) _usbDialog = null;
+      if (mounted) _scheduleUsbPrompt();
+    }));
   }
 
   @override
@@ -192,6 +256,7 @@ class _ChatRoomPageState extends State<ChatRoomPage>
 
   @override
   void dispose() {
+    _closeUsbDialog();
     WidgetsBinding.instance.removeObserver(this);
     if (_ownsUsbGeneDongle) _usbGeneDongle?.dispose();
     _loadGeneration++;
@@ -528,6 +593,8 @@ class _ChatRoomPageState extends State<ChatRoomPage>
             : () {
                 Navigator.of(context).pop();
                 _loadGeneration++;
+                _closeUsbDialog();
+                _snp.clearUsbConfirmation();
                 setState(() => _usbMessage = null);
                 if (_snp.busy) {
                   unawaited(_snp.cancel());
@@ -583,6 +650,7 @@ class _ChatRoomPageState extends State<ChatRoomPage>
                         offline: _usesUsb,
                         busy: _snp.busy,
                         settingsHeight: constraints.maxHeight * 0.30,
+                        onOpenUsbConfirmation: _openUsbConfirmation,
                         usb: _usesUsb
                             ? SnpChatUsbStatus(
                                 controller: _snp,
@@ -721,6 +789,7 @@ class _ExperiencePanel extends StatelessWidget {
   final double settingsHeight;
   final SnpChatUsbStatus? usb;
   final Widget? usbControls;
+  final VoidCallback onOpenUsbConfirmation;
   final ChatController controller;
   final bool collapsed;
   final TopicPresentation Function(ChatTopic topic) topicFor;
@@ -734,6 +803,7 @@ class _ExperiencePanel extends StatelessWidget {
     required this.settingsHeight,
     this.usb,
     this.usbControls,
+    required this.onOpenUsbConfirmation,
     required this.controller,
     required this.collapsed,
     required this.topicFor,
@@ -822,7 +892,7 @@ class _ExperiencePanel extends StatelessWidget {
                     icon: Icon(Icons.usb,
                         color:
                             usb!.ready ? Colors.teal : Colors.orange.shade800),
-                    onPressed: collapsed ? onToggleCollapsed : () {},
+                    onPressed: busy ? null : onOpenUsbConfirmation,
                   ),
                 ),
               IconButton(

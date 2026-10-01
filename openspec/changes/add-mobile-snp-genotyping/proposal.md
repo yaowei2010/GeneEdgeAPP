@@ -8,6 +8,8 @@ GeneEdge 需要在手機離線查詢 USB gene dongle 並判定 SNP 基因型，�
 
 ## What Changes
 
+插入即確認與精簡JSON追加需求（最新優先）：使用者在Pixel觀察到必須點酒精主題才出現USB確認，需修正為前景聊天室偵測USB掛載就自動彈窗，與主題／set是否就緒無關；仍不因插入啟動計算。成功結果在訊息流只顯示API可用JSON與必要的完成／複製操作，移除逐位點計數、posterior與完整debug報告的常駐展示。上方設定提供「顯示 API JSON」開關，預設開啟、記住偏好，關閉後當前及後續結果不顯示JSON正文；計算及JSON產生不受影響。debug與分段計時保留為上方設定中主動開啟的有界診斷視窗，不自動佔滿聊天室，不新增LLM傳輸或基因結果保存。
+
 USB插入確認追加需求：每次USB掛載時，自動顯示可關閉的APP確認視窗，預設以該USB根目錄為授權搜尋範圍；已有唯讀授權直接沿用，未授權時由確認頁按鈕開啟定位根目錄的Android系統選擇器，仍須使用者確認。恢復同USB上次有效來源，否則只在合法pair唯一時自動選取，多组無紀錄不猜。關閉視窗不開始計算，可由上方USB圖示重新開啟；確認後仍等聊天送出才執行C，不新增API傳輸。
 
 USB偵測圖示追加需求：全部整合到原本聊天室上方下拉設定區，插入時在該區標頭顯示USB icon，滑鼠hover或手機長按顯示目前選定資料夾的可讀名稱；展開既有下拉設定可授權／選來源／調整debug。用標頭圖示取代訊息流中佔位的USB來源卡片，不新增獨立AppBar設定按鈕或bottom sheet，聊天畫面保留。尚未授權或多組未選時顯示待設定狀態，不冒充運算就緒；插入／hover／展開設定不啟動SNP，只有送出聊天訊息才計算。
@@ -55,3 +57,4 @@ USB偵測圖示追加需求：全部整合到原本聊天室上方下拉設定�
 - 介面修正影響：`lib/chat_room_page.dart`、`lib/snp_chat_panel.dart`、必要的`lib/snp_compute.dart`來源狀態介面、`test/snp_chat_panel_test.dart`及`docs/mobile-snp-genotyping.md`。不更動C模型／原生IDX格式／BLE演算法或AI URL。
 - USB icon追加影響同上述Flutter介面／tests／操作文件，沿用sources.label顯示選定資料夾，不新增原生路徑讀取或URI洩露。
 - USB確認追加影響：`SnpComputePlugin.kt`、`snp/SnpContracts.kt`及`SnpContractsTest.kt`的根目錄授權／有效來源恢復策略，`lib/snp_compute.dart`、`lib/chat_room_page.dart`、`lib/snp_chat_panel.dart`及對應controller／widget tests的插入確認生命週期，`docs/mobile-snp-genotyping.md`的操作與驗證紀錄。不改C模型、AI API、舊USB匯入或手機內部儲存策略。
+- 插入即確認／精簡JSON追加影響：上述Flutter聊天室、controller、結果卡片及tests；必要時修正SnpComputePlugin的掛載狀態通知時序，保留IPC相容與授權規則。沿用既有SharedPreferences只保存JSON顯示boolean，不保存JSON、結果或來源內容；文件記錄新版操作、備份與實機限制。

@@ -71,8 +71,77 @@ class FakeSnpPlatform implements SnpComputePlatform {
   Future<String?> pickPanel() async => null;
 }
 
+class MutableSourcePlatform extends FakeSnpPlatform {
+  Map<String, Object?> snapshot = sourceWire(1);
+  Future<Object?> Function()? onSelect;
+  @override
+  Map<String, Object?> sourcesMap() => snapshot;
+  @override
+  Future<Object?> selectSource(String id) async =>
+      onSelect == null ? snapshot : await onSelect!();
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test('invalid permission metadata clears an already confirmed source',
+      () async {
+    final p = MutableSourcePlatform();
+    final c = SnpComputeController(platform: p, supported: true);
+    await c.start();
+    await c.confirmUsbSource();
+    expect(c.sourceConfirmed, true);
+    p.snapshot = {
+      ...sourceWire(2),
+      'volumes': [
+        {
+          'id': 'usb-volume',
+          'label': 'USB',
+          'authorized': true,
+          'authorizationScopes': [42]
+        }
+      ]
+    };
+    await c.refresh();
+    expect(c.errorCode, 'INVALID_FORMAT');
+    expect(c.sourceConfirmed, false);
+    c.dispose();
+    await p.stream.close();
+  });
+  test(
+      'source selection callback after removal cannot restore stale attachment',
+      () async {
+    final p = MutableSourcePlatform();
+    final reply = Completer<Object?>();
+    final c = SnpComputeController(platform: p, supported: true);
+    await c.start();
+    p.onSelect = () => reply.future;
+    final selecting = c.selectSource('usb1');
+    p.stream.add(
+        {'revision': 2, 'status': 'invalidated', 'errorCode': 'USB_REMOVED'});
+    reply.complete(sourceWire(3));
+    await selecting;
+    expect(c.sources, isEmpty);
+    expect(c.selectedSourceId, isNull);
+    expect(c.sourceConfirmed, false);
+    c.dispose();
+    await p.stream.close();
+  });
+  test('USB confirmation is explicit, attachment scoped and does not run C',
+      () async {
+    final p = FakeSnpPlatform();
+    final c = SnpComputeController(platform: p, supported: true);
+    await c.start();
+    expect(c.sourceConfirmed, false);
+    expect(await c.confirmUsbSource(), true);
+    expect(c.sourceConfirmed, true);
+    expect(p.runCalls, 0);
+    p.stream.add(
+        {'revision': 2, 'status': 'invalidated', 'errorCode': 'USB_REMOVED'});
+    expect(c.sourceConfirmed, false);
+    expect(c.sources, isEmpty);
+    c.dispose();
+    await p.stream.close();
+  });
   test(
       'cancel reports measured elapsed but never accepts late debug completion',
       () async {

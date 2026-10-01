@@ -4,6 +4,62 @@ The independent query-page and 143-query requirements below SHALL remain the leg
 
 The dismissible insertion confirmation below SHALL take precedence over the earlier icon-tap behavior: tapping the USB icon SHALL reopen confirmation, while the existing settings arrow SHALL continue to expand the upper settings panel. Source metadata persistence SHALL be distinct from the prohibition on persisting genetic results.
 
+The topic-independent insertion and compact result requirements below SHALL take precedence over earlier inline locus/debug presentation. A persisted display-preference boolean SHALL be distinct from genetic-result persistence; API and diagnostic payloads SHALL remain ephemeral.
+
+### Requirement: Topic-independent USB insertion prompting
+The foreground chat room SHALL display insertion confirmation upon detection of a mounted removable USB without requiring topic selection, set availability, asset completion or other user interaction. Mounted-volume readiness SHALL NOT be represented as an authorized source or a completed scan. Pending source discovery SHALL be shown as pending within confirmation rather than delaying it until topic interaction. First entry with USB attached and return to foreground SHALL recheck attachment state. A new attachment detected during a busy job or another active route SHALL be processed only after the chat is foreground and idle, if still attached. Dismissal deduplication, icon reopening, root authorization rules, removal/logout/disposal cleanup and stale-callback rejection SHALL remain unchanged. Insertion SHALL NOT select alcohol automatically, run C, open the system picker automatically or invoke HTTP.
+
+#### Scenario: Insert without selecting a topic
+- **WHEN** USB is detected in the foreground idle chat with no topic selected, an unsupported topic, or a pending or failed panel load
+- **THEN** one dismissible USB confirmation SHALL appear without a topic tap, and computation SHALL remain blocked until source confirmation and a valid ready set.
+
+##### Example: Pending alcohol asset
+- **GIVEN** no USB, a pending alcohol asset future and runCalls=0
+- **WHEN** mounted USB ABCD-1234 is reported without completing the asset or tapping the topic selector
+- **THEN** USB confirmation SHALL appear, runCalls SHALL remain zero, and repeated refresh SHALL NOT create another dialog.
+
+#### Scenario: Deferred foreground confirmation
+- **WHEN** a new USB is detected while a job is busy or the chat route is not current
+- **THEN** confirmation SHALL wait until chat foreground idle state; a USB removed before then SHALL NOT produce a stale dialog.
+
+##### Example: Return to the chat
+- **GIVEN** another route is open and USB ABCD-1234 is detected
+- **WHEN** the user returns to the idle chat without changing its topic
+- **THEN** one insertion confirmation SHALL appear if ABCD-1234 remains mounted.
+
+### Requirement: Compact API JSON presentation and visibility preference
+A completed chat USB job SHALL render only a compact completion state, the unchanged API request JSON and explicit copy controls in its message-stream result card. JSON presentation SHALL be height-bounded and scrollable. Per-locus counts, candidate posteriors and full diagnostic reports SHALL NOT be rendered in the chat result card. The existing upper settings panel SHALL expose a display-JSON toggle defaulting to enabled for a new installation and privately persist only that boolean. Preference loading SHALL NOT override a newer user change; unresolved preference loading SHALL NOT expose JSON text. Disabled display SHALL remove JSON content from both rendered widgets and accessibility semantics for current and subsequent results. Display toggling SHALL NOT change counts, genotypes, job snapshots, payload serialization or execution, and SHALL NOT trigger C, HTTP, TTS, automatic copying or payload persistence. Restart SHALL restore only the preference, not genetic results. Re-enabling display SHALL expose only the still-valid latest payload.
+
+#### Scenario: Hide current and future JSON
+- **WHEN** the user disables display in upper settings
+- **THEN** the current and subsequent successful cards SHALL show only a short completed/hidden state without JSON content; explicit re-enabling SHALL show a still-valid latest payload without rerunning computation.
+
+##### Example: Same payload after visibility change
+- **GIVEN** one completed 77-locus alcohol job, a valid API payload and runCalls=1
+- **WHEN** display is disabled and enabled again
+- **THEN** the payload SHALL remain identical, runCalls SHALL remain 1, no automatic clipboard or HTTP action SHALL occur, and no 77-locus detail cards SHALL appear.
+
+#### Scenario: Display preference survives restart without results
+- **WHEN** display is disabled and the chat is recreated or the app restarts
+- **THEN** display SHALL remain disabled, but no previous JSON or genetic result SHALL be restored from private storage.
+
+##### Example: Boolean-only storage
+- **GIVEN** display was disabled after a completed job
+- **WHEN** preferences are inspected and a new chat page is opened
+- **THEN** the feature SHALL have stored only its display boolean, and no query, variant, genotype, diagnostic or API payload SHALL have been persisted.
+
+### Requirement: Explicit bounded chat diagnostics
+Debug instrumentation and per-job debug snapshots SHALL remain unchanged. When the latest valid job has a debug report, upper settings SHALL offer an explicit action to open a bounded scrollable diagnostic view with stage timing, a research warning and explicit copy controls. Reports SHALL NOT automatically expand into the message stream. Debug-disabled jobs SHALL NOT expose a debug report. Cancellation, removal, source/topic changes, logout and page disposal SHALL invalidate reports and close a diagnostic view showing an invalidated job; stale events SHALL NOT restore it. Hiding API JSON SHALL NOT change debug instrumentation or transmit either payload.
+
+#### Scenario: Open timing only on request
+- **WHEN** a debug-enabled 77-locus chat job completes
+- **THEN** the message stream SHALL omit its diagnostic report, and explicit upper-settings inspection SHALL show its valid stage times without additional computation or networking.
+
+##### Example: Removal during inspection
+- **GIVEN** the diagnostic view is open for the latest completed USB job
+- **WHEN** that USB is removed
+- **THEN** the view SHALL close and its copyable report SHALL be cleared; a late event SHALL NOT reopen or restore it.
+
 ### Requirement: USB root authorization and source restoration
 Android SHALL reuse valid persisted read-only SAF grants for mounted removable USB volumes and SHALL default a new authorization picker to the selected USB volume root using its UUID root document URI on supported versions. Initial location SHALL NOT grant permission or confirm the system picker. The UI SHALL identify the actual authorized scope, including existing subfolder-only grants, and SHALL expose a root-authorization action. Provider restrictions SHALL be surfaced without requesting write or all-files access, selecting primary storage, or claiming unauthorized root access. Source discovery SHALL scan only authorized mounted trees with the existing depth-16 and 10000-entry bounds and cancellation checks. It SHALL retain a valid current pair, otherwise restore the same volume's explicitly chosen pair only if still discovered and authorized, otherwise select a single valid pair. Multiple pairs without a valid remembered choice SHALL remain unselected. Only source-selection metadata SHALL be persisted privately; genetic data, reads, results and API payloads SHALL NOT be persisted by this feature.
 

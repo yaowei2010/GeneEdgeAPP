@@ -6,6 +6,26 @@ import org.junit.Test
 import java.io.ByteArrayInputStream
 
 class SnpContractsTest {
+    @Test fun rootAuthorizationTargetsMountedUsbOnlyAndDescribesActualScope() {
+        assertEquals("ABCD-1234:", SnpUsbAccess.rootDocumentId("ABCD-1234", setOf("ABCD-1234")))
+        assertEquals("USB 根目錄", SnpUsbAccess.scopeLabel("ABCD-1234:"))
+        assertEquals("子資料夾：gene", SnpUsbAccess.scopeLabel("ABCD-1234:gene"))
+        listOf("primary", "missing", "ABCD-1234:gene", "").forEach { id ->
+            try { SnpUsbAccess.rootDocumentId(id, setOf("ABCD-1234")); fail() }
+            catch (e: SnpFailure) { assertEquals("USB_REMOVED", e.code) }
+        }
+    }
+    @Test fun restoresCurrentThenRememberedAuthorizedPairWithoutGuessing() {
+        val pairs = mapOf("gene1" to "ABCD-1234", "gene2" to "ABCD-1234")
+        val remembered = mapOf("ABCD-1234" to "gene2")
+        assertEquals("gene1", SnpUsbAccess.restore("gene1", pairs, remembered))
+        assertEquals("gene2", SnpUsbAccess.restore(null, pairs, remembered))
+        assertNull(SnpUsbAccess.restore(null, mapOf("gene1" to "ABCD-1234", "gene3" to "ABCD-1234"), remembered))
+        assertEquals("gene1", SnpUsbAccess.restore(null, mapOf("gene1" to "ABCD-1234"), remembered))
+        assertNull(SnpUsbAccess.restore(null, emptyMap(), remembered))
+        assertNull(SnpUsbAccess.restore(null, pairs, mapOf("another-usb" to "gene2")))
+        assertNull(SnpUsbAccess.restore(null, mapOf("a" to "usb-a", "b" to "usb-b"), mapOf("usb-a" to "a", "usb-b" to "b")))
+    }
     @Test fun locusModeGroupsQueriesAndRejectsConflictingFlanks() {
         val seq="A".repeat(301)
         val one=SnpQuery("rs1_4_100_A_C",seq,"A","C")
