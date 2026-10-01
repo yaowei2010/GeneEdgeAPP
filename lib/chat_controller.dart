@@ -5,6 +5,7 @@ import "package:uuid/uuid.dart";
 import "api_service.dart";
 import "ble_gateway.dart";
 import "models.dart";
+import 'snp_api_payload.dart';
 
 class TopicStrategy {
   final String systemPrompt;
@@ -691,6 +692,23 @@ class ChatController extends ChangeNotifier {
       originalCount: rawVariants.length,
       noCallCount: noCallCount,
     );
+  }
+
+  /// USB already computed the evidence: reuse transport, never compute BLE/mock,
+  /// persist a genetic payload, or enable the ordinary request debug logger.
+  Future<String> askCompletedUsb(SnpApiPayload payload) async {
+    final request = payload.request;
+    final result = await api.askLlm(
+      userId: request['user_id'] as String,
+      aggregatedQuery: request['query'] as String,
+      topic: _normalizeTopicForCloud(request['topic'] as String),
+      variants: request['variants'] as List<String>,
+      originalVariantCount: request['variant_input_count'] as int,
+      noCallCount: request['no_call_count'] as int,
+      yuguard: request['yuguard'],
+      debugMode: false,
+    );
+    return result.answer;
   }
 
   Future<_LlmReply> _runCloudLlm({

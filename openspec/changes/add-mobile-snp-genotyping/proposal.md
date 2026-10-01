@@ -8,6 +8,8 @@ GeneEdge 需要在手機離線查詢 USB gene dongle 並判定 SNP 基因型，�
 
 ## What Changes
 
+USB表單GeneLLM入口追加需求：在聊天室既有USB上方下拉表單的靠前位置加入GeneLLM開關及清楚的LLM ON／OFF文字，直接沿用ChatController.geneLlmEnabled與setGeneLlmEnabled，與左側選單同步且沿用原偏好。ON說明完成C後送既有LLM；OFF說明只產生離線JSON。USB計算／等待LLM期間禁用這個表單開關，既有送出快照不變。展開／切換不主動run或HTTP，不改JSON顯示、來源確認及C模型。
+
 USB接既有LLM追加需求（最新優先）：沿用APP現有GeneLLM開關、ApiService.askLlm的/v1/ask URL／JSON傳送／response解析與聊天室泡泡，不新增server或另一套HTTP client。GeneLLM開啟的合法聊天送出先完成USB手機C工作，再僅送有效完整API request一次，將server answer顯示在原聊天室；GeneLLM關閉仍停在離線JSON。此項取代以下已完成版本的「不新增LLM傳輸」界線，但不改獨立進階頁、C模型、USB授權及JSON顯示偏好。API JSON與診斷不寫入聊天歷史，USB訊息／LLM回覆沿用暫存訊息流，取消／來源失效／主題切換／登出／dispose抑制過期回覆；網路失敗提供明確重試，不fallback BLE／mock、不自動重送。
 
 插入即確認與精簡JSON追加需求（最新優先）：使用者在Pixel觀察到必須點酒精主題才出現USB確認，需修正為前景聊天室偵測USB掛載就自動彈窗，與主題／set是否就緒無關；仍不因插入啟動計算。成功結果在訊息流只顯示API可用JSON與必要的完成／複製操作，移除逐位點計數、posterior與完整debug報告的常駐展示。上方設定提供「顯示 API JSON」開關，預設開啟、記住偏好，關閉後當前及後續結果不顯示JSON正文；計算及JSON產生不受影響。debug與分段計時保留為上方設定中主動開啟的有界診斷視窗，不自動佔滿聊天室，不新增LLM傳輸或基因結果保存。
@@ -48,6 +50,8 @@ USB偵測圖示追加需求：全部整合到原本聊天室上方下拉設定�
 無。
 
 ## Impact
+
+- USB表單開關影響：`lib/snp_chat_panel.dart`的SnpChatControls、`lib/chat_room_page.dart`的既有controller傳值／callback、`test/usb_llm_chat_test.dart`或`test/snp_chat_panel_test.dart`與`docs/mobile-snp-genotyping.md`；沿用原ChatController偏好，不新增第二個USB專用GeneLLM flag或API。
 
 - USB接LLM影響：`lib/chat_controller.dart`提供重用既有ApiService.askLlm及response／錯誤處理的USB結果入口，`lib/chat_room_page.dart`整合完成事件／single-flight／失效與暫存回覆；必要時`lib/snp_chat_panel.dart`提供等待／錯誤／重試。對應controller／widget／API測試及`docs/mobile-snp-genotyping.md`，不新增依賴或變更server契約。修改前將目前Pixel精簡JSON版限定相關檔案備份至遠端Git。
 

@@ -1,5 +1,21 @@
 ## ADDED Requirements
 
+### Requirement: Upper USB form shares the existing GeneLLM control
+The existing upper USB settings form SHALL expose a GeneLLM switch near its top with explicit LLM ON/OFF text and a description of enabled completed-job submission versus offline-only execution. Its value and setter SHALL use the existing ChatController GeneLLM state and preference, with live synchronization to the retained drawer control. No second USB-specific enable flag or preference SHALL be introduced. The form switch SHALL be disabled during C computation or LLM waiting and without an actionable callback. Opening the form, toggling the switch and preference restoration SHALL NOT compute, invoke HTTP or retrospectively submit a completed offline result. Existing per-submission snapshots, JSON visibility, USB confirmation and retry behavior SHALL remain unchanged. The form SHALL remain bounded and scrollable with the keyboard open.
+
+#### Scenario: Shared setting through either entry
+- **WHEN** the idle user changes GeneLLM in the USB form or the existing drawer
+- **THEN** both entries SHALL reflect the same controller state and explicit ON/OFF label without computation or transmission.
+
+##### Example: Enable without sending
+- **GIVEN** a ready USB, GeneLLM=false, runCalls=0 and LLM calls=0
+- **WHEN** the user opens the upper form and enables GeneLLM
+- **THEN** the form SHALL show LLM ON, the drawer SHALL show GeneLLM on, both call counts SHALL remain zero and the next submission SHALL capture enabled=true.
+
+#### Scenario: Busy form control
+- **WHEN** USB C computation or its LLM request is pending
+- **THEN** the form GeneLLM switch SHALL be disabled while JSON display remains independently switchable, and the submitted enable snapshot SHALL remain unchanged.
+
 The completed-USB LLM requirements below SHALL supersede the earlier pre-LLM boundary and HTTP prohibition for chat jobs only. Legacy independent computation SHALL remain offline. USB requests, diagnostic results and responses SHALL remain ephemeral; existing ordinary chat behavior SHALL remain unchanged.
 
 ### Requirement: Reuse existing LLM API for completed USB chat jobs

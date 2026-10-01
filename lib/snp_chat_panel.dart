@@ -259,7 +259,9 @@ class SnpChatControls extends StatelessWidget {
       required this.error,
       required this.showApiJson,
       required this.onShowApiJsonChanged,
-      required this.onOpenDiagnostics});
+      required this.onOpenDiagnostics,
+      this.interactionLocked = false,
+      this.geneLlmEnabled = false});
   final SnpComputeController controller;
   final SnpSet set;
   final List<SnpQuery>? queries;
@@ -267,6 +269,8 @@ class SnpChatControls extends StatelessWidget {
   final bool showApiJson;
   final ValueChanged<bool> onShowApiJsonChanged;
   final VoidCallback onOpenDiagnostics;
+  final bool interactionLocked, geneLlmEnabled;
+  bool get _busy => controller.busy || interactionLocked;
   @override
   Widget build(BuildContext context) => Card(
       child: Padding(
@@ -285,8 +289,9 @@ class SnpChatControls extends StatelessWidget {
             else
               Text(
                   '已載入 ${queries!.length} 筆參考／${SnpLocus.group(queries!).length} 位點\n${set.version}'),
-            const Text(
-                '在下方輸入問題並送出，會用 C 計算及產生 JSON，不呼叫 AI API。\n研究模型尚未校準，非 GATK 等效、非臨床判讀。'),
+            Text(geneLlmEnabled
+                ? '送出後會用 C 計算，並將 API JSON 送到既有 LLM 伺服器取得回覆。隱藏 JSON 不會阻止傳送。\n研究模型尚未校準，非 GATK 等效、非臨床判讀。'
+                : '在下方輸入問題並送出，會用 C 計算及產生 JSON；GeneLLM 關閉，不呼叫 AI API。\n研究模型尚未校準，非 GATK 等效、非臨床判讀。'),
             ExpansionTile(
                 title: Text(controller.selectedSourceId == null
                     ? 'USB 來源與唯讀授權'
@@ -294,7 +299,7 @@ class SnpChatControls extends StatelessWidget {
                 initiallyExpanded: controller.selectedSourceId == null,
                 children: [
                   TextButton.icon(
-                      onPressed: controller.busy ? null : controller.refresh,
+                      onPressed: _busy ? null : controller.refresh,
                       icon: const Icon(Icons.refresh),
                       label: const Text('重新掃描 USB')),
                   for (final volume in controller.volumes)
@@ -305,7 +310,7 @@ class SnpChatControls extends StatelessWidget {
                         trailing: volume['authorized'] == true
                             ? null
                             : TextButton(
-                                onPressed: controller.busy
+                                onPressed: _busy
                                     ? null
                                     : () => controller
                                         .requestAccess(volume['id'] as String),
@@ -327,7 +332,7 @@ class SnpChatControls extends StatelessWidget {
                                 child: Text(s['label'] as String,
                                     overflow: TextOverflow.ellipsis)))
                             .toList(),
-                        onChanged: controller.busy
+                        onChanged: _busy
                             ? null
                             : (id) {
                                 if (id != null) {
@@ -344,7 +349,7 @@ class SnpChatControls extends StatelessWidget {
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Debug：結果與分段計時'),
                 value: controller.debugEnabled,
-                onChanged: controller.busy ? null : controller.setDebugEnabled),
+                onChanged: _busy ? null : controller.setDebugEnabled),
             if (controller.debugReport != null && !controller.busy)
               TextButton.icon(
                   onPressed: onOpenDiagnostics,

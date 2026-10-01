@@ -68,7 +68,13 @@
 
 ## 11. USB結果接既有LLM
 
-- [ ] 11.1 修改本組APP程式前，将目前已安裝精簡JSON版的相關dirty程式／tests／文件與本次規格限定Git備份到遠端codex/分支；以git status、commit檔案清單及git ls-remote驗證SHA一致，排除其他功能及個人USB資料，記錄回復位置。
-- [ ] 11.2 依賴11.1，以失敗測試實作 Reuse existing LLM API for completed USB chat jobs／USB結果沿用既有LLM功能 的controller/API入口：重用ApiService.askLlm與既有response解析／cloud錯誤，僅接受完整USB snapshot，保留77/70/7與三份相同variants、user/query/topic及null yuguard，關閉傳輸debug，不BLE／mock／diagnostic上傳／結果保存。以fake API/controller測試核對呼叫參數、answer、錯誤及全部no-call空list契約。
-- [ ] 11.3 接續11.2，以widget失敗測試實作 Job-scoped USB LLM responses and explicit retry：送出捕捉GeneLLM flag，on在有效完成後去重恰一次request、off只離線；既有聊天室_Bubble呈現等待／answer／安全失敗與顯式retry。驗證JSONhide/show不重送、C與LLM busy禁止重送、retry同payload不重算，拔除／取消／來源／主題／logout／dispose使late成功與錯誤無效，舊finally不覆蓋新工作、無HTTP fallback／持久化／自動TTS；無USB普通sendUserMessage與原debug／JSON契約保持。
-- [ ] 11.4 接續11.3更新docs/mobile-snp-genotyping.md的GeneLLM開關／URL、送出到回覆、JSON隱藏仍送、失敗重試、已傳請求不能撤回及備份；執行Flutter全套tests／analyze與ARM64 build，區分mock與實際server驗證，不自動安裝，3.3保持未完成。
+- [x] 11.1 修改本組APP程式前，将目前已安裝精簡JSON版的相關dirty程式／tests／文件與本次規格限定Git備份到遠端codex/分支；以git status、commit檔案清單及git ls-remote驗證SHA一致，排除其他功能及個人USB資料，記錄回復位置。
+- [x] 11.2 依賴11.1，以失敗測試實作 Reuse existing LLM API for completed USB chat jobs／USB結果沿用既有LLM功能 的controller/API入口：重用ApiService.askLlm與既有response解析／cloud錯誤，僅接受完整USB snapshot，保留77/70/7與三份相同variants、user/query/topic及null yuguard，關閉傳輸debug，不BLE／mock／diagnostic上傳／結果保存。以fake API/controller測試核對呼叫參數、answer、錯誤及全部no-call空list契約。
+- [x] 11.3 接續11.2，以widget失敗測試實作 Job-scoped USB LLM responses and explicit retry：送出捕捉GeneLLM flag，on在有效完成後去重恰一次request、off只離線；既有聊天室_Bubble呈現等待／answer／安全失敗與顯式retry。驗證JSONhide/show不重送、C與LLM busy禁止重送、retry同payload不重算，拔除／取消／來源／主題／logout／dispose使late成功與錯誤無效，舊finally不覆蓋新工作、無HTTP fallback／持久化／自動TTS；無USB普通sendUserMessage與原debug／JSON契約保持。
+- [x] 11.4 接續11.3更新docs/mobile-snp-genotyping.md的GeneLLM開關／URL、送出到回覆、JSON隱藏仍送、失敗重試、已傳請求不能撤回及備份；執行Flutter全套tests／analyze與ARM64 build，區分mock與實際server驗證，不自動安裝，3.3保持未完成。
+
+## 12. USB表單GeneLLM入口
+
+- [ ] 12.1 修改表單前將目前已安裝USB接LLM版相關dirty程式／tests／docs與本次規格限定Git備份至遠端codex/分支，核對commit檔案清單及git ls-remote SHA一致，排除其他功能與個人USB資料，記錄回復位置。
+- [ ] 12.2 依賴12.1，以widget失敗測試實作 Upper USB form shares the existing GeneLLM control／USB表單GeneLLM共用開關：在原USB上方表單頂端顯示共用SwitchListTile與LLM ON／OFF／流程說明，直接傳既有controller value及setter、保留側欄同步與原偏好，不新增另一flag；C／LLM忙碌及無callback禁用，JSON顯示仍獨立。測試雙入口同步、idle切換與偏好、切換不run／HTTP／補送旧JSON、下一次送出快照、busy禁用及鍵盤有界無overflow。
+- [ ] 12.3 接續12.2更新docs/mobile-snp-genotyping.md的上方USB表單GeneLLM位置、ON／OFF／busy與側欄同步及備份；執行Flutter全套tests／analyze與ARM64 build、git diff --check及Spectra validate，區分mock與真實手機驗收，不自動安裝且3.3保持未完成。

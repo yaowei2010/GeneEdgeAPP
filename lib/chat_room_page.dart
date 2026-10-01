@@ -14,6 +14,7 @@ import "snp_compute_page.dart";
 import 'snp_compute.dart';
 import 'snp_sets.dart';
 import 'snp_chat_panel.dart';
+import 'snp_api_payload.dart';
 
 class ChatRoomPage extends StatefulWidget {
   final VoidCallback? onLogout;
@@ -53,6 +54,84 @@ class _ChatRoomPageState extends State<ChatRoomPage>
   ChatTopic? _snpTopic;
   bool _usbAttached = false;
   ChatMessage? _usbMessage;
+  ChatMessage? _usbLlmMessage;
+  bool _usbLlmEnabledAtSend = false, _usbLlmBusy = false, _usbLlmFailed = false;
+  int _usbLlmGeneration = 0;
+  String? _usbSubmissionSource, _usbLlmJobId;
+  SnpApiPayload? _usbLlmPayload;
+  bool get _usbBusy => _snp.busy || _usbLlmBusy;
+
+  void _invalidateUsbLlm() {
+    _usbLlmGeneration++;
+    _usbLlmEnabledAtSend = false;
+    _usbLlmBusy = false;
+    _usbLlmFailed = false;
+    _usbSubmissionSource = null;
+    _usbLlmJobId = null;
+    _usbLlmPayload = null;
+    _usbLlmMessage = null;
+  }
+
+  bool _validUsbReply(int generation, String jobId) =>
+      mounted &&
+      generation == _usbLlmGeneration &&
+      _snp.status == 'completed' &&
+      _snp.resultJobId == jobId &&
+      _snp.selectedSourceId == _usbSubmissionSource;
+
+  Future<void> _requestUsbLlm(SnpApiPayload payload) async {
+    final jobId = _usbLlmJobId, generation = _usbLlmGeneration;
+    final chat = _chat;
+    if (jobId == null ||
+        chat == null ||
+        _usbLlmBusy ||
+        !_validUsbReply(generation, jobId)) {
+      return;
+    }
+    setState(() {
+      _usbLlmBusy = true;
+      _usbLlmFailed = false;
+      _usbLlmMessage = ChatMessage(
+          id: 'usb-llm',
+          role: Role.assistant,
+          content: '等待 LLM 回覆…',
+          createdAt: DateTime.now());
+    });
+    try {
+      final answer = await chat.askCompletedUsb(payload);
+      if (!_validUsbReply(generation, jobId)) return;
+      setState(() => _usbLlmMessage = ChatMessage(
+          id: 'usb-llm',
+          role: Role.assistant,
+          content: answer,
+          createdAt: DateTime.now()));
+    } catch (_) {
+      if (!_validUsbReply(generation, jobId)) return;
+      // Server errors can echo genetic payloads: do not expose raw bodies.
+      setState(() {
+        _usbLlmFailed = true;
+        _usbLlmMessage = ChatMessage(
+            id: 'usb-llm',
+            role: Role.assistant,
+            content: 'LLM 回覆失敗，請確認網路與伺服器設定後重試。USB 計算結果仍有效。',
+            createdAt: DateTime.now());
+      });
+    } finally {
+      if (_validUsbReply(generation, jobId)) {
+        setState(() => _usbLlmBusy = false);
+        _scheduleUsbPrompt();
+      }
+    }
+  }
+
+  void _retryUsbLlm() {
+    final payload = _usbLlmPayload;
+    if (!_usbLlmFailed || payload == null || _chat?.geneLlmEnabled != true) {
+      return;
+    }
+    unawaited(_requestUsbLlm(payload));
+  }
+
   final Set<String> _usbPrompted = {};
   DialogRoute<void>? _usbDialog;
   Set<String> _dialogUsbIds = {};
@@ -161,6 +240,28 @@ class _ChatRoomPageState extends State<ChatRoomPage>
       _snp.selectedSourceId != null;
   void _snpChanged() {
     if (!mounted) return;
+    if (_usbSubmissionSource != null &&
+        (_snp.selectedSourceId != _usbSubmissionSource ||
+            !['running', 'completed'].contains(_snp.status) ||
+            (_usbLlmJobId != null && _snp.resultJobId != _usbLlmJobId))) {
+      _invalidateUsbLlm();
+    }
+    if (_usbMessage != null &&
+        _usbLlmEnabledAtSend &&
+        _usbLlmJobId == null &&
+        _snp.status == 'completed' &&
+        _snp.resultJobId != null) {
+      _usbLlmJobId = _snp.resultJobId;
+      try {
+        final payload = SnpApiPayload.fromCompleted(_snp);
+        if (payload != null) {
+          _usbLlmPayload = payload;
+          unawaited(_requestUsbLlm(payload));
+        }
+      } on FormatException {
+        _snpError = 'USB 結果格式無效，未送至 LLM。';
+      }
+    }
     if (_diagnosticsDialog != null &&
         (_snp.debugReport == null || _snp.resultJobId != _diagnosticsJobId)) {
       _closeDiagnostics();
@@ -196,7 +297,7 @@ class _ChatRoomPageState extends State<ChatRoomPage>
     if (_usbPromptScheduled ||
         !_foreground ||
         _usbDialog != null ||
-        _snp.busy ||
+        _usbBusy ||
         !_snp.mountedUsbIds.any((id) => !_usbPrompted.contains(id))) {
       return;
     }
@@ -205,7 +306,7 @@ class _ChatRoomPageState extends State<ChatRoomPage>
       _usbPromptScheduled = false;
       if (!mounted ||
           !_foreground ||
-          _snp.busy ||
+          _usbBusy ||
           ModalRoute.of(context)?.isCurrent != true ||
           !_snp.mountedUsbIds.any((id) => !_usbPrompted.contains(id))) {
         return;
@@ -218,7 +319,7 @@ class _ChatRoomPageState extends State<ChatRoomPage>
   void _openUsbConfirmation() {
     if (!mounted ||
         !_foreground ||
-        _snp.busy ||
+        _usbBusy ||
         _usbDialog != null ||
         _snp.mountedUsbIds.isEmpty) {
       return;
@@ -257,6 +358,7 @@ class _ChatRoomPageState extends State<ChatRoomPage>
 
   void _chatChanged() {
     if (_chat!.topic == _snpTopic) return;
+    _invalidateUsbLlm();
     _snpTopic = _chat!.topic;
     _loadGeneration++;
     if (_snp.busy) {
@@ -292,9 +394,13 @@ class _ChatRoomPageState extends State<ChatRoomPage>
     final text = _textCtrl.text.trim();
     if (text.isEmpty) return;
     final chat = context.read<ChatController>();
-    if (_snp.busy) return;
+    if (_usbBusy) return;
     if (_usesUsb) {
       if (!_canOfflineSend) return;
+      _invalidateUsbLlm();
+      _usbLlmEnabledAtSend = chat.geneLlmEnabled;
+      _usbSubmissionSource = _snp.selectedSourceId;
+      final generation = _usbLlmGeneration;
       setState(() => _usbMessage = ChatMessage(
           id: 'usb-message',
           role: Role.user,
@@ -309,7 +415,11 @@ class _ChatRoomPageState extends State<ChatRoomPage>
                     : chat.threadId,
                 text,
                 chat.topic.label));
-        if (mounted && _snp.errorCode == null) _textCtrl.clear();
+        if (mounted &&
+            generation == _usbLlmGeneration &&
+            _snp.errorCode == null) {
+          _textCtrl.clear();
+        }
       } catch (e) {
         if (mounted) setState(() => _snpError = '無法開始離線運算：$e');
       }
@@ -360,6 +470,7 @@ class _ChatRoomPageState extends State<ChatRoomPage>
 
   @override
   void dispose() {
+    _invalidateUsbLlm();
     _closeDiagnostics();
     _closeUsbDialog();
     WidgetsBinding.instance.removeObserver(this);
@@ -465,7 +576,7 @@ class _ChatRoomPageState extends State<ChatRoomPage>
   }
 
   Future<void> _openTopicPicker() async {
-    if (_snp.busy) return;
+    if (_usbBusy) return;
     final controller = context.read<ChatController>();
     await showModalBottomSheet<void>(
       context: context,
@@ -700,6 +811,7 @@ class _ChatRoomPageState extends State<ChatRoomPage>
                 _loadGeneration++;
                 _closeDiagnostics();
                 _closeUsbDialog();
+                _invalidateUsbLlm();
                 _snp.clearUsbConfirmation();
                 setState(() => _usbMessage = null);
                 if (_snp.busy) {
@@ -754,7 +866,7 @@ class _ChatRoomPageState extends State<ChatRoomPage>
                         onOpenTopicPicker: _openTopicPicker,
                         onOpenBlePicker: _openBlePicker,
                         offline: _usesUsb,
-                        busy: _snp.busy,
+                        busy: _usbBusy,
                         settingsHeight: constraints.maxHeight * 0.30,
                         onOpenUsbConfirmation: _openUsbConfirmation,
                         usb: _usesUsb
@@ -767,6 +879,8 @@ class _ChatRoomPageState extends State<ChatRoomPage>
                         usbControls: _usesUsb
                             ? SnpChatControls(
                                 controller: _snp,
+                                interactionLocked: _usbLlmBusy,
+                                geneLlmEnabled: c.geneLlmEnabled,
                                 set: _snpSet,
                                 queries: _snpQueries,
                                 error: _snpError,
@@ -802,6 +916,19 @@ class _ChatRoomPageState extends State<ChatRoomPage>
                                               _showApiJson)
                                     else
                                       SnpChatJobCard(controller: _snp),
+                                    if (_usbLlmMessage != null)
+                                      _Bubble(msg: _usbLlmMessage!),
+                                    if (_usbLlmBusy)
+                                      TextButton(
+                                          onPressed: _snp.cancel,
+                                          child: const Text(
+                                              '取消等待 LLM（已送出的請求無法撤回）')),
+                                    if (_usbLlmFailed)
+                                      TextButton(
+                                          onPressed: c.geneLlmEnabled
+                                              ? _retryUsbLlm
+                                              : null,
+                                          child: const Text('重試 LLM')),
                                   ],
                                 ],
                               ),
@@ -809,7 +936,7 @@ class _ChatRoomPageState extends State<ChatRoomPage>
                       _Composer(
                         controller: _textCtrl,
                         isListening: _isListening,
-                        onSend: _snp.busy || (_usesUsb && !_canOfflineSend)
+                        onSend: _usbBusy || (_usesUsb && !_canOfflineSend)
                             ? null
                             : _send,
                         onMic: _toggleVoiceInput,

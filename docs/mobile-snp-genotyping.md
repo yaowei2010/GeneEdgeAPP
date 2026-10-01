@@ -1,6 +1,6 @@
 # 手機 USB 離線 SNP 運算
 
-聊天室新版的四等位聯合計數與 Dirichlet-multinomial genotyping 均使用 C；Flutter 只管理輸入／畫面／JSON轉換，Kotlin／JNI 只管理 USB 權限、FD 與工作生命週期。原本獨立頁的二等位 beta-binomial 模式保留。AI URL API 未修改，不自動把研究結果送至 LLM。
+聊天室新版的四等位聯合計數與 Dirichlet-multinomial genotyping 均使用 C；Flutter 管理輸入／畫面／JSON轉換與既有LLM串接，Kotlin／JNI 只管理 USB 權限、FD 與工作生命週期。原本獨立頁的二等位 beta-binomial 模式保留且不送LLM。聊天室GeneLLM開啟時，合法USB聊天完成後會沿用原APP的ApiService.askLlm及既有URL/v1/ask送API JSON，接收response顯示於同一聊天室；不更動server契約或C模型。
 
 ## 操作
 
@@ -10,7 +10,8 @@
 4. 若需耗時，先在展開操作啟用「Debug：結果與分段計時」（預設關閉）。直接在原輸入框輸入問題並送出，以文字／主題／set／來源／debug快照執行C；訊息流顯示本次使用者泡泡及計算回覆，原聊天泡泡保留。進度到77/77，工作中锁定主題／來源／debug與重送，可取消。
 5. 同訊息流的完成卡片只顯示完成狀態、API JSON與「複製 API JSON」，正文高度有界可捲動，不再展示77張位點／posterior明細或debug全文。上方設定的「顯示 API JSON」預設開啟，可隱藏現在及下次結果，隱藏後只留「已完成，API JSON 已隱藏」；重開APP沿用偏好，但不恢復舊基因結果。只保存snp_chat_show_api_json boolean；偏好尚未載入／格式錯誤時不顯示正文。開關只影響畫面，不重算、不傳API、不自動複製，也不改debug。隱藏不是加密或刪除記憶體，不能清除之前自行複製的剪貼簿或已啟用debug的logcat。
    若本次計算啟用了debug，上方設定提供「查看 debug／分段計時」，主動開啟有界可捲動的診斷視窗，含每位點計數／候選posterior、研究警示、階段時間與「複製 debug 結果」；debug off沒有報告。結果失效會關閉診斷。複製始終是顯式操作，基因資訊會進剪貼簿。
-6. USB文字／結果是暫存UI，不寫聊天歷史、不自動TTS／HTTP／LLM；只保留最新USB工作的一組訊息，下一次送出替換。取消、拔除、變更來源／主題、登出使成功結果與匯出失效，晚到事件不可還原，失敗不自動改送網路。取消／失敗只顯示已量測elapsedMs，不宣稱完成。
+6. 在送出前開啟原本「GeneLLM」，並確認APP既有server URL可由手機網路存取。送出時固定捕捉開關狀態；ON會等完整C結果後送出一次API JSON（77位點、三份一致且排除no-call的variantlists），顯示「等待 LLM 回覆…」後將server answer放在原聊天泡泡中；OFF只做離線結果。計算中切換GeneLLM不改本次快照。隱藏API JSON只影響正文，不阻止已啟用的LLM請求、不隱藏answer，切換顯示不重送。API請求不含debug診斷、posterior、序列、read ID或URI，且USB路徑固定關閉原LLM request debuglog，不把基因request輸出聊天debug泡泡或寫檔。
+7. LLM等待時鎖定重送、主題與來源／debug操作；失敗顯示安全錯誤與「重試 LLM」，C結果仍有效。只有有效結果且GeneLLM開啟才能手動重試同一request，不重跑C、不自動重試，也不改用BLE／mock。可「取消等待 LLM」使結果失效；已傳至server的request不能撤回，只忽略其晚到回覆。取消、拔除、來源／主題變更、登出或離開頁面清除本次輸出與retry，晚到成功／失敗不能復活舊結果或影響新工作。USB文字／JSON／診斷／LLM回覆仍只保留最新一組暫存UI，不寫聊天歷史、不自動TTS；下一次送出替換。原沒有USB時的普通／BLE聊天保存行為不變。取消／C失敗只顯示已量測elapsedMs，不宣稱完成、不HTTP fallback。
 
 側欄「手機 SNP 運算」保留為進階／legacy工具，單SNP與外部FASTA仍支援301bp、最多3000筆及2MiB限制；該頁酒精set執行143筆獨立二等位查詢、進度143/143，不是聊天室77位點聯合判定。
 
@@ -35,6 +36,8 @@ totalMs从worker開始到結果結構建置完成，不含排程等待、Flutter
 啟用debug才會輸出GeneEdgeSnp logcat摘要，每行有界並escaped，不含序列、原始read ID、source URI或檔案內容；聊天室報告schemaVersion=2（legacy為1）含set版本、各列結果及計時。這些摘要仍是敏感基因資訊，複製會進剪貼簿，日誌可能被偵錯工具看到；不自動保存、上傳或呼叫LLM。
 
 ## Pixel／真實USB驗收
+
+LLM串接新版另驗收：確認手機可達既有server URL，開GeneLLM→插USB／確認來源→選酒精→輸入問題。確認C到77/77後才顯示等待LLM，server response在同一聊天室泡泡呈現；關閉JSON仍有answer且server只收到一份request。GeneLLM OFF時不送server。斷網或server失敗需看到「LLM 回覆失敗」及「重試 LLM」，恢復網路後只重送同JSON而不重跑C；等待時拔USB／取消／切主題／登出，遲到回覆不可出現在新工作。實際server日誌、PixelUSB流程與計數／效能必須另量測，mock HTTP測試不能替代。
 
 1. 在原聊天室選酒精、插入USB，確認自動出現可關閉視窗；取消／返回／點外部後不反覆彈出且不能送出，點上方USB圖示重開。首次根目錄授權檢查系統picker預選USB最外層，再手動同意；拔插後檢查有效grant與來源恢復、不必再挑資料夾，但仍須「使用此 USB」。舊子目錄grant應明示實際範圍，多來源未選不能送出。長按查看資料夾，設定箭頭展開77位點／143參考及debug；原聊天泡泡保留，不使用舊匯入入口。
 2. 不點主題先插入USB，確認立即彈窗；再選酒精／確認来源，開啟debug、輸入問題並送出，確認UI仍可取消。完成應77/77且聊天室只顯示有界API JSON；關閉「顯示 API JSON」後當前與下次正文皆不可見，重開APP偏好仍關閉但不恢復舊結果，重新顯示不重算。核對API三份列表一致、每rsID唯一、input77、used加no_call等於77；由上方「查看 debug／分段計時」核對77列、set版本與時間加總，拔除／切主題後診斷失效。no-call不等於讀取失敗。
@@ -87,5 +90,12 @@ GT輸出0/0、0/1、1/1；零深度、低深度、最高posterior低於門檻或
 - 前次「原聊天室USB送出」版已依使用者要求install -r成功安裝至Pixel 10 Pro並啟動。2026-10-01最新「上方USB圖示／下拉設定」版ARM64 debug APK位於build/app/outputs/flutter-apk/app-debug.apk，已依使用者要求以install -r安裝至Pixel 10 Pro（61210DLCH001H5），回傳Success；MainActivity啟動成功且確認APP程序存在，保留原APP資料。真實USB seek、取消／拔除、記憶體、耗時與結果對照仍待驗收，tasks3.3保持未勾選；不得把建置／安裝或人工fixture當真實基因資料正確性驗證。
 - 最新圖示版採測試先行：先確認缺少USB圖示而失敗，再完成實作。Flutter全套76項通過、analyze無問題；新增hover／long-press、上方設定雙入口、鍵盤捲動無overflow、舊tooltip失效、多來源不猜與不自動計算測試。本次沒有更動C／Android演算法，這些為widget／fake驗證，不是真實USB計數效能量測。
 - 2026-10-01最新確認版Flutter全套87項、Android SNP19項／USB10項通過，flutter analyze無問題，ARM64 debug APK建置成功（build/app/outputs/flutter-apk/app-debug.apk）。新增取消／返回／點外部與重開、授權返回去重、多USB／子資料夾範圍、根目錄授權重用、未確認阻擋送出、拔除／關閉後late回覆拒絕、鍵盤與dispose測試。Android純契約測試涵蓋root URI定位／primary拒絕、目前來源／同卷記錄／唯一pair恢復順序及失效拒絕；實際SAF picker初始定位、系統保存grant與重插仍需Pixel驗收。本版未改C模型或API；已依使用者要求以install -r安裝至Pixel 10 Pro（61210DLCH001H5），回傳Success，MainActivity冷啟動Status: ok且APP程序存在，保留原APP資料。不把安裝成功或fake／單元測試當實機授權或基因驗證，3.3保持未完成。
-- 尚未新增LLM傳輸；結果與可用JSON只在本機聊天室顯示。不能宣稱整條到LLM的實機流程完成。
+- 舊版僅產生本機JSON；本次新增GeneLLM ON的完成後傳輸及聊天室response。自動化fake API與mock HTTP不代表實際LLM server或Pixel整條流程已驗收。
 - 2026-10-01最新「插入即確認／精簡JSON」版：測試先行重現掃描中未通知掛載／其他路由返回漏提示／非前景彈窗、掃描中仍可確認與拔除後late掃描回覆，以及舊位點明細仍佔位。新增先通知volumes再掃描、獨立於主題／set的排程與返回前景處理；新增JSON隱藏boolean、late偏好保護、正文／語意移除、下次工作與重開頁偏好，以及主動診斷／取消／拔除／主題／登出／dispose回歸。Flutter全套102項通過、flutter analyze無問題、Android SNP19項／USB10項通過，ARM64 debug APK建置成功（build/app/outputs/flutter-apk/app-debug.apk）；未修改C模型／API serializer。已以adb install -r更新至Pixel 10 Pro（61210DLCH001H5），回傳Success，保留既有APP資料；MainActivity冷啟動Status: ok，確認程序執行中（PID 23071）。這些測試與安裝確認不等同Pixel真實掛載或SAF定位、計數／效能驗收，3.3保持未完成。
+## USB → LLM 串接備份
+
+2026-10-01 後續安裝：依使用者要求，將USB接既有LLM版ARM64 debug APK以adb install -r更新至Pixel 10 Pro（61210DLCH001H5），回傳Success並保留原APP資料；MainActivity啟動Status: ok，確認程序執行中（PID 23907）。這僅確認安裝／啟動，尚未驗收手機真實USB→實際LLM server→聊天回覆，3.3保持未完成。
+
+2026-10-01 串接前已將目前Pixel精簡JSON版及本次規格限定備份至遠端 `codex/backup-before-usb-llm-20261001`，commit `a4d557888781a50568bbe815b6ccb6b722882d5f`；已核對遠端SHA與11個相關檔案清單，未包含其他功能或個人USB資料。回退可從此commit重建APK並更新安裝，無需清除APP資料。
+
+2026-10-01 USB接既有LLM版驗證：先以失敗controller／widget測試確認USB入口及完成後request尚未存在，再實作askCompletedUsb與原聊天室暫存response。新增26項測試涵蓋77/70/7、全部no-call、既有ApiService的POST URL／exact JSON及answer／choices解析、GeneLLM送出快照、hidden JSON不重送、等待single-flight、HTTP安全失敗／顯式retry、C未完成不HTTP、取消／拔除／來源／主題／登出／dispose遲到成功與失敗抑制及舊finally不清除新工作。Flutter全套128項通過、flutter analyze無問題；ARM64 debug APK建置成功（build/app/outputs/flutter-apk/app-debug.apk），git diff --check及Spectra validate通過，規格分析無Warning／Critical。未改C／Android模型或server API，未重新安裝Pixel、未呼叫實際LLM server驗收；3.3真實USB對照／效能保持未完成。

@@ -13,6 +13,12 @@ Non-Goals：手機內部 combined 資料、複製完整 USB 資料、FASTQ 建�
 
 ## Decisions
 
+### USB表單GeneLLM共用開關
+
+在SnpChatControls頂部加入SwitchListTile，title為GeneLLM，副標題包含LLM ON／OFF與「完成計算後送既有LLM」／「僅離線計算」說明。value直接由ChatController.geneLlmEnabled傳入，callback使用setGeneLlmEnabled(bool)，不能建立第二份USB開關或自行保存新preferences；原側欄入口保留，任一入口變更後透過同一controller通知同步。沒有可操作callback时須禁用，不顯示能改但無作用的控制。表單開關在C busy或LLM waiting禁用，idle可切換，下一次送出仍沿用既有flag快照。展開表單、開關切換與偏好恢復不run／HTTP，也不追補傳送先前完成的離線JSON。JSON開關仍只影響展示。
+
+範圍內：原USB上方表單的共用GeneLLM入口、狀態說明／語意、兩入口同步、busy守衛、tests與操作文件、修改前Git備份；範圍外：新HTTP功能、改已完成job的傳送快照、變更C／API契約、自動安裝、USB實機計數驗收。表單保留既有有界捲動，鍵盤展開不能overflow。
+
 ### USB結果沿用既有LLM功能
 
 本節及對應Implementation Contract是最新優先契約，取代前LLM界線與禁止HTTP的舊聊天室描述；已完成task保持歷史記錄，獨立計算頁仍不送LLM。範圍內是USB結果銜接既有雲端API與暫存聊天回覆；範圍外是新server／HTTP client、BLE／mock重算、C模型／序列讀取變更、診斷上傳、基因資料持久化、自動TTS及背景重試。
@@ -118,6 +124,8 @@ asset 載入顯示 loading／ready／error 與 set 名稱、版本、筆數，�
 完整驗收路徑為：選酒精→asset驗證143筆→USB唯讀授權／pair選取→C SNP計數→獨立C genotyping→143列結果／no-call及debug階段时间。Widget／controller 測試用 fake platform 驗證傳入的143筆與實際asset相同、完成列數及set版本；native／JNI fixture 仍負責驗證核心計數及模型，不能用fake平台冒充實機USB。Pixel實測记录手機、set版本、USB來源、完成／錯誤、计時、取消與拔除；未知真實GT不當正確性證據，需用人工已知fixture或獨立核對。離線功能不送出 HTTP／LLM 呼叫；本次「整個流程」驗收界線是 LLM 之前，原本AI URL API不變。
 
 ## Implementation Contract
+
+- USB表單GeneLLM共用開關：實作Upper USB form shares the existing GeneLLM control，先寫widget失敗測試驗證表單頂端GeneLLM／LLM OFF，點ON更新原ChatController及侧欄GeneLLM on，從侧欄改OFF表單同步、idle可切換且prefs仍用原欄位。展開與切換不增加C／LLM calls、不自動送舊JSON；C／LLM busy禁用表單開關、JSON顯示仍可切換、原快照與retry不變。執行全套Flutter tests／analyze及ARM64 build並更新docs；保留未驗證實機3.3，只有使用者要求時安裝。
 
 - USB結果沿用既有LLM功能驗收：實作下面Reuse existing LLM API for completed USB chat jobs、Job-scoped USB LLM responses and explicit retry。先以fake ApiService/controller/widget失敗測試驗證GeneLLM off無HTTP、on在完整完成後恰一次/v1/ask、77/70/7計數／相同variantlists／快照context與null yuguard、不傳diagnostic／URI／序列。測試GeneLLM on/off在run中變更仍以送出快照為準，重複完成／JSON hide/show不重送、正在等待泡泡及busy、answer沿用_Bubble、不執行BLE／mock／自動TTS／持久化／API debuglog。HTTP錯誤與顯式retry保留C完成結果且不重算；拔除／來源／主題／登出／dispose後late成功與失敗不復活，舊finally不影響新請求。Fake成功不能宣稱實際server回應；執行Flutter全套tests／analyze及ARM64 build，文件記錄需GeneLLM on與URL可達、已送請求不可撤回、安裝另需使用者要求；3.3仍保留真實USB驗收。
 
