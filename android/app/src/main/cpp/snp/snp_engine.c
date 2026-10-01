@@ -166,3 +166,116 @@ int snp_query(int idxfd,int idsfd,const char *sequence,char ref,char alt,
               snp_counts *out,snp_cancel_fn cancelled,void *context) {
     return snp_query_timed(idxfd,idsfd,sequence,ref,alt,out,cancelled,context,NULL);
 }
+
+/* Separate table keeps the legacy two-allele memory footprint unchanged.
+ * 36 bytes/slot: 72 MiB maximum, 108 MiB transient while growing. */
+typedef struct {
+    uint32_t id;
+    uint16_t coverage[2], support[4][2], last_coverage, last_support[4];
+} locus_candidate;
+typedef struct { locus_candidate *slots; size_t capacity,used; } locus_table;
+int snp_locus_validate(const char *const *sequences,const char *refs,size_t count) {
+    if(!sequences||!refs||!count||count>3000)return SNP_INVALID_QUERY;
+    for(size_t q=0;q<count;q++){
+        if(!sequences[q]||!base(refs[q])||refs[q]!=refs[0])return SNP_INVALID_QUERY;
+        for(int i=0;i<301;i++){
+            if(!base(sequences[q][i]))return SNP_INVALID_QUERY;
+            if(i!=150&&sequences[q][i]!=sequences[0][i])return SNP_INVALID_QUERY;
+        }
+        if(sequences[q][301])return SNP_INVALID_QUERY;
+    }
+    return SNP_OK;
+}
+static locus_candidate *locus_locate(locus_table *t,uint32_t id) {
+    size_t i=mix(id)&(t->capacity-1);
+    while(t->slots[i].last_coverage&&t->slots[i].id!=id)i=(i+1)&(t->capacity-1);
+    return &t->slots[i];
+}
+static int locus_grow(locus_table *t) {
+    size_t capacity=t->capacity?t->capacity*2:1024;
+    locus_candidate *slots=calloc(capacity,sizeof *slots);
+    if(!slots)return SNP_RESOURCE_LIMIT;
+    locus_table next={slots,capacity,t->used};
+    for(size_t i=0;i<t->capacity;i++)if(t->slots[i].last_coverage)*locus_locate(&next,t->slots[i].id)=t->slots[i];
+    free(t->slots);*t=next;return SNP_OK;
+}
+static int locus_impl(int idxfd,int idsfd,const char *sequence,snp_locus_counts *out,
+                      snp_cancel_fn cancelled,void *context,snp_timing *timing) {
+    if(!out)return SNP_INVALID_QUERY;
+    memset(out,0,sizeof *out);
+    if(!sequence)return SNP_INVALID_QUERY;
+    for(int i=0;i<301;i++)if(!base(sequence[i]))return SNP_INVALID_QUERY;
+    if(sequence[301])return SNP_INVALID_QUERY;
+    if(cancelled&&cancelled(context))return SNP_CANCELLED;
+    uint64_t start=tick(timing);
+    int failed=lseek(idxfd,0,SEEK_CUR)<0||lseek(idsfd,0,SEEK_CUR)<0;int saved_errno=errno;
+    io_end(timing,start);errno=saved_errno;
+    if(failed)return errno==ESPIPE?SNP_NOT_SEEKABLE:SNP_IO_ERROR;
+    struct stat is,ds;start=tick(timing);failed=fstat(idxfd,&is)||fstat(idsfd,&ds);io_end(timing,start);
+    if(failed)return SNP_IO_ERROR;
+    if(is.st_size!=(off_t)IDX_BYTES||ds.st_size<=0||ds.st_size%4)return SNP_INVALID_FORMAT;
+    uint64_t postings=(uint64_t)ds.st_size/4;
+    char sequences[2][4][302];
+    for(int a=0;a<4;a++){
+        memcpy(sequences[0][a],sequence,302);sequences[0][a][150]="ACGT"[a];
+        for(int i=0;i<301;i++)sequences[1][a][i]=complement(sequences[0][a][300-i]);
+        sequences[1][a][301]=0;
+    }
+    locus_table t={NULL,0,0};snp_locus_counts result={0};int error=locus_grow(&t);
+    unsigned char bucket[8],batch[BATCH*4];if(error)goto done;
+    for(int o=0;o<2;o++)for(int p=0;p<=288;p+=2){
+        uint16_t token=(uint16_t)(o*145+p/2+1);int overlap=p<=150&&p+12>=150;
+        for(int a=0;a<(overlap?4:1);a++){
+            if(cancelled&&cancelled(context)){error=SNP_CANCELLED;goto done;}
+            error=read_at(idxfd,bucket,8,(uint64_t)hash(sequences[o][a]+p)*8,timing);if(error)goto done;
+            uint32_t packed=decode(bucket+4),count=packed&0xffffffu;
+            uint64_t offset=decode(bucket)|((uint64_t)(packed>>24)<<32);
+            if(offset>postings||count>postings-offset){error=SNP_INVALID_FORMAT;goto done;}
+            if(count>65536){result.skipped_buckets++;continue;}
+            for(uint32_t cursor=0;cursor<count;){
+                if(cancelled&&cancelled(context)){error=SNP_CANCELLED;goto done;}
+                uint32_t take=count-cursor;if(take>BATCH)take=BATCH;
+                error=read_at(idsfd,batch,(size_t)take*4,(offset+cursor)*4,timing);if(error)goto done;
+                for(uint32_t j=0;j<take;j++){
+                    uint32_t id=decode(batch+j*4);locus_candidate *c=locus_locate(&t,id);
+                    if(!c->last_coverage){
+                        if(t.used>=SNP_CANDIDATE_LIMIT){error=SNP_RESOURCE_LIMIT;goto done;}
+                        if((t.used+1)*10>t.capacity*7){error=locus_grow(&t);if(error)goto done;c=locus_locate(&t,id);}
+                        c->id=id;t.used++;
+                    }
+                    if(c->last_coverage!=token){c->coverage[o]++;c->last_coverage=token;}
+                    if(overlap&&c->last_support[a]!=token){c->support[a][o]++;c->last_support[a]=token;}
+                }
+                cursor+=take;
+            }
+        }
+    }
+    for(size_t i=0;i<t.capacity;i++){
+        if((i&4095u)==0&&cancelled&&cancelled(context)){error=SNP_CANCELLED;goto done;}
+        locus_candidate *c=&t.slots[i];if(!c->last_coverage)continue;
+        unsigned support[4]={0};int qualified=0;
+        for(int o=0;o<2;o++)if(c->coverage[o]>58){qualified=1;for(int a=0;a<4;a++)support[a]+=c->support[a][o];}
+        if(!qualified)continue;
+        unsigned best=0;int winner=-1,ties=0;
+        for(int a=0;a<4;a++){
+            if(support[a]>best){best=support[a];winner=a;ties=1;}
+            else if(best&&support[a]==best)ties++;
+        }
+        result.total++;
+        if(!best)result.coverage_only++;else if(ties>1)result.ambiguous++;else result.bases[winner]++;
+    }
+done:
+    free(t.slots);if(!error)*out=result;return error;
+}
+int snp_locus_query(int idxfd,int idsfd,const char *sequence,snp_locus_counts *out,
+                    snp_cancel_fn cancelled,void *context,snp_timing *timing) {
+    if(timing)memset(timing,0,sizeof *timing);
+    uint64_t start=tick(timing);
+    int error=locus_impl(idxfd,idsfd,sequence,out,cancelled,context,timing);
+    if(timing){
+        uint64_t end=tick(timing);
+        if(end<start||end-start<timing->io_ns)timing->clock_failed=1;else timing->query_ns=end-start;
+        if(timing->clock_failed){if(out)memset(out,0,sizeof *out);return SNP_IO_ERROR;}
+    }
+    return error;
+}

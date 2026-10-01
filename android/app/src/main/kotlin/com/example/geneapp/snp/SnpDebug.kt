@@ -37,7 +37,8 @@ object SnpDebug {
     fun logRow(enabled: Boolean, row: Map<String, Any?>): String? {
         if (!enabled) return null
         val keys = listOf("id", "total", "ref", "alt", "ambiguous", "coverageOnly", "skippedBuckets",
-            "effectiveDepth", "refAllele", "altAllele", "gt", "posterior", "noCallReason", "modelVersion", "calibrated")
+            "effectiveDepth", "refAllele", "altAllele", "gt", "posterior", "noCallReason", "modelVersion", "calibrated",
+            "baseCounts","alleles","actualGenotype","bestGenotype","bestPosterior","logScoreGap")
         val safe = keys.filter { row.containsKey(it) }.associateWith { row[it] }.toMutableMap()
         val id = (safe["id"] as? String).orEmpty()
         safe["id"] = id.substring(0,id.offsetByCodePoints(0,minOf(96,id.codePointCount(0,id.length))))

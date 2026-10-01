@@ -4,6 +4,12 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SnpDebugTest {
+    @Test fun jointLocusLoggingIncludesCountsAndGenotypeWithoutPrivateFields() {
+        val log=SnpDebug.logRow(true,row()+mapOf("baseCounts" to listOf(10,20,0,0),
+            "alleles" to listOf("T","A","C","G"),"actualGenotype" to "TA","bestPosterior" to .99))!!
+        assertTrue(log.contains("baseCounts"));assertTrue(log.contains("actualGenotype"));assertTrue(log.contains("bestPosterior"))
+        assertFalse(log.contains("PRIVATE"))
+    }
     @Test fun elapsedOnlyBelongsToActiveStartedDebugJob() {
         assertNull(SnpDebug.elapsed(false, 100L, 500L, true))
         assertNull(SnpDebug.elapsed(true, 0L, 500L, true))

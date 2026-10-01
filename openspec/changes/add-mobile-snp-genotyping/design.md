@@ -13,6 +13,16 @@ Non-Goals：手機內部 combined 資料、複製完整 USB 資料、FASTQ 建�
 
 ## Decisions
 
+### USB運算來源與原聊天訊息流
+
+2026-10-01優先修正契約：下面「聊天室離線流程與API JSON」的明確離線開關／切換body是上一版實作記錄，不再是新介面驗收。保留普通聊天室ListView、歷史泡泡、主題與composer。USB是類似BLE／Auto的實際運算来源，非另開工具畫面；Auto在現有程式指BLE裝置自動選擇，本次不把它當成全新自動AI路由。
+
+用SnpComputeController的sources／volumes／selectedSourceId判定目前USB：偵測到可運算USB pair或removable卷時呈現「USB・手機C」來源狀態，預先載入當前主題set；插入不啟動工作。首次SAF授權、多組pair選擇、debug放可展開來源操作，不佔據整個聊天body。没有USB時原BLE／In App／一般聊天sendUserMessage行為維持；USB存在但未授權、來源不唯一、選擇失效、set不支援／載入中／錯誤時送出禁用或明確攔截，不fallback至其他路徑。USB工作中拔除仍是取消／錯誤，不重送訊息至網路。
+
+USB ready時原composer送出固定捕捉文字／主題／set／來源／debug，呼叫現有runLoci。原聊天歷史仍可見，在訊息流末端顯示本次暫存使用者泡泡與assistant計算卡片（進度／取消／成功或錯誤），不寫ChatController.messages／SharedPreferences，不自動TTS或LLM。每次只保留最新USB工作訊息與结果，下一次送出替換上一組；工作中禁用重送並鎖定主題、來源與debug。結果沿用77位點、模型警示、計時與可複製API JSON；取消／拔除／來源或主題變更／登出使可匯出結果失效，stale guard不變。
+
+範圍內：送出路由與同訊息流呈現、USB狀態／授權、多組選擇、debug及回歸驗證。範圍外：自動API傳輸、聊天基因資料持久化、重寫BLE／C模型／USB provider、新增臨床校準。拒絕只把離線開關預設開啟的替代方案，因為仍會替換訊息流，未滿足本次操作要求。
+
 ### 聊天室離線流程與API JSON
 
 追加範圍為同一聊天室的明確「USB離線SNP」模式。一般聊天送出仍沿用既有行為；離線模式的送出按鈕帶入當下文字、健康主題映射的set與已選USB來源，呼叫原生離線工作而非sendUserMessage的網路路徑。插入後呈現來源狀態／掃描與首次SAF授權，不因插入自動運算或送出。多組來源需選擇；沒有資料的主題仍可一般聊天，但離線模式不可執行。busy鎖定主題／模式／debug，取消、拔除、來源／主題變更、登出均使舊job卡片與可複製JSON失效。聊天室卡片是暫存UI資料，不寫入現有聊天歷史持久化，不影響TTS。保留獨立頁為進階工具，不要求聊天室流程導頁。
@@ -67,6 +77,7 @@ asset 載入顯示 loading／ready／error 與 set 名稱、版本、筆數，�
 
 ## Implementation Contract
 
+- 2026-10-01優先介面驗收：移除USB離線模式開關，不以SnpChatControls取代聊天歷史；USB來源狀態與送出路由依上述「USB運算來源與原聊天訊息流」。`test/snp_chat_panel_test.dart`須驗證無需切模式、舊泡泡可見、輸入問題→C收到143參考→77/77→原訊息流有暫存文字／結果／JSON；禁止HTTP／持久化／TTS。另驗證未授權／多來源／無set／載入錯誤禁用、busy鎖定、取消與拔除不fallback、stale不復活、沒有USB時原sendUserMessage。模型與serializer既有tests維持通過。
 - 追加優先契約：聊天室使用上述聯合locus模式與API JSON。已完成獨立頁的143列二等位行為保留為進階／legacy模式；以下query契約與既有驗收不代表新locus功能已完成。API傳輸、自動持久化、BQ推造、臨床校準、舊USB匯入、TTS不在追加範圍。
 - 追加驗收：C共同fixture核對四類去重、跨ALT/方向不增深度、ALT/ALT與無支持的鹼基、非法上下文；模型與独立高精度參考比對10候選posterior，驗證對稱／參數／no-call。Flutter fake聊天室測試選酒精→文字送出→77/77→唯一位點JSON、debug on/off結果相同、清空／取消／拔除stale guard，禁止HTTP；API payload tests精確核對askLlm欄位、REF=T/ALT=C轉TC、no-call排除及重複rsID拒絕。實機與fixture分開紀錄。
 

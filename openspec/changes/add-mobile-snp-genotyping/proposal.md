@@ -8,6 +8,12 @@ GeneEdge 需要在手機離線查詢 USB gene dongle 並判定 SNP 基因型，�
 
 ## What Changes
 
+2026-10-01介面修正（優先於下面已完成版本的獨立離線模式描述）：使用者要求類似原BLE／Auto的送出→運算→結果訊息流程，USB是資料來源、手機C是運算端，不切換聊天室畫面、不要求額外USB離線開關。插入後辨識USB與授權狀態，發送訊息時依目前主題set計算，文字／進度／結果與API JSON在原訊息流呈現。既有沒有USB時的聊天路徑保留；此修正仍停在產生API JSON，不新增自動LLM傳輸。
+
+- 移除聊天室USB離線開關及替換整個聊天body的計算畫面，保留既有聊天泡泡、主題選擇與輸入框；USB狀態／授權／來源選擇與debug採簡潔可展開操作。
+- USB掛載時送出訊息選擇手機C路徑，單一合法來源可沿用原生自動選定；多組／未授權／panel未就緒明示阻擋，不悄悄改用BLE／Local JSON／雲端。
+- 在既有訊息流末端顯示本次暫存使用者訊息與計算回覆卡片，不寫入聊天歷史、不自動TTS；原77位點統計模型與API JSON不變。
+
 追加需求：直接在原有聊天室，以USB離線模式及既有健康主題選擇SNP set，輸入問題後執行C運算並產生既有API可用JSON；同位點只輸出一個統計模型判定的基因型。以下獨立頁與二等位模型為已完成的基礎功能，聊天室新增聯合位點模式，不把舊143列結果直接合併。
 
 - 新增同位點共同read去重的四鹼基計數與獨立C Dirichlet-multinomial Bayesian caller；比較10種二倍體genotype，取最大posterior，深度不足／低posterior／並列保持no-call。
@@ -42,3 +48,4 @@ GeneEdge 需要在手機離線查詢 USB gene dongle 並判定 SNP 基因型，�
 - Dependencies: 既有 Android NDK／CMake、JNI、Dart MethodChannel；不新增 GATK、Python 或網路服務。
 - Set 追加影響：新增 `assets/snp_sets/alcohol.set143.k150.fasta`、`lib/snp_sets.dart`、`test/snp_sets_test.dart`，修改 `pubspec.yaml`、`lib/snp_compute.dart`、`lib/snp_compute_page.dart` 及既有 SNP tests／操作文件；不將 USB combined 或任何個人 read 打包入 App。
 - 聊天室／聯合模型追加影響：新增C `locus_genotype_model.c/.h`、`test/native/locus_genotype_model_test.c`、`test/native/snp_locus_test.c`，Flutter `snp_api_payload.dart`、`snp_chat_panel.dart`及對應tests；修改既有SNP engine／bridge／plugin／contracts、CMake、`snp_sets.dart`、`snp_compute.dart`、`chat_room_page.dart`及驗證腳本。`api_service.dart`現有JSON契約只作相容性依據，不改URL或自動傳輸行為。
+- 介面修正影響：`lib/chat_room_page.dart`、`lib/snp_chat_panel.dart`、必要的`lib/snp_compute.dart`來源狀態介面、`test/snp_chat_panel_test.dart`及`docs/mobile-snp-genotyping.md`。不更動C模型／原生IDX格式／BLE演算法或AI URL。

@@ -1,6 +1,6 @@
 ## ADDED Requirements
 
-The independent query-page and 143-query requirements below SHALL remain the legacy/advanced workflow. The added chat workflow SHALL use the separate joint-locus mode defined below, with 77 locus results derived from the unchanged 143-record reference panel. Legacy per-query results SHALL NOT substitute for joint-locus evidence or API export.
+The independent query-page and 143-query requirements below SHALL remain the legacy/advanced workflow. The added chat workflow SHALL use the separate joint-locus mode defined below, with 77 locus results derived from the unchanged 143-record reference panel. Legacy per-query results SHALL NOT substitute for joint-locus evidence or API export. The USB-source chat message flow requirement added on 2026-10-01 SHALL supersede the previously implemented explicit USB-offline switch and replacement chat body; its pre-LLM boundary and ephemeral-result restrictions SHALL remain unchanged.
 
 ### Requirement: Direct USB source access
 The Android app SHALL read combined_idx_all.txt and combined_ids_all.txt directly and read-only from the same authorized mounted removable USB folder, without full-file copying or selecting primary phone storage. It SHALL validate file sizes and 64-bit seek support and require explicit selection when multiple pairs exist.
@@ -158,3 +158,25 @@ Completed chat jobs SHALL expose explicitly copyable JSON independent of debug m
 #### Scenario: Complete export with no-calls
 - **WHEN** an alcohol job completes all 77 loci with 70 calls and seven no-calls
 - **THEN** each variant list SHALL contain 70 unique entries, variant_input_count SHALL equal 77, variant_used_count SHALL equal 70 and no_call_count SHALL equal seven; query/topic/user identity SHALL come from the job snapshot and the export SHALL cause no HTTP request.
+
+### Requirement: USB-source chat message flow
+The chat room SHALL treat an inserted removable USB as the source for phone-side C computation, analogous to the existing send-compute-result interaction for BLE, without an additional offline-mode switch or replacing the chat message list. USB insertion SHALL expose source readiness and authorization but SHALL NOT start a job. Existing chat bubbles and the composer SHALL remain visible. Sending text against a ready selected USB and valid topic set SHALL snapshot the text, topic, set, source and debug flag, execute runLoci, and append the latest ephemeral user bubble and assistant progress/result card to the same visible message stream. The card SHALL expose 77 grouped alcohol locus results, no-calls, opt-in stage timing and API JSON. Only the latest USB job pair SHALL be retained in memory. This path SHALL NOT invoke HTTP, BLE computation, Local JSON mock computation, automatic TTS or chat-history persistence.
+
+#### Scenario: Send computes without a mode switch
+- **WHEN** an authorized selected USB is present, alcohol is selected and the user sends a message
+- **THEN** the app SHALL retain prior visible chat messages and show the sent text and computation progress/result in that same message list without an offline switch or page navigation.
+
+##### Example: Alcohol chat computation
+- **GIVEN** existing chat text "上一則對話", selected source usb1 and the valid 143-reference alcohol panel
+- **WHEN** the user sends "我能喝酒嗎"
+- **THEN** C SHALL receive the 143 references in locus mode, progress SHALL reach 77/77, "上一則對話" and the ephemeral sent text SHALL remain visible, and a unique-locus API JSON card SHALL appear without HTTP or persistence.
+
+#### Scenario: USB readiness blocks unsafe fallback
+- **WHEN** USB is present but authorization is missing, multiple pairs lack a selection, or the topic set is unsupported, loading or invalid
+- **THEN** submission SHALL be disabled or explicitly rejected with the corresponding readiness state, without silently invoking BLE, Local JSON or cloud routes or substituting the alcohol set.
+
+#### Scenario: Source lifetime and ordinary chat
+- **WHEN** no USB is present and no USB job is pending
+- **THEN** the original ordinary/BLE/Local JSON chat route SHALL remain available.
+- **WHEN** a USB job is running
+- **THEN** repeated send, topic/source and debug changes SHALL be locked; cancellation, unplugging, source/topic changes or logout SHALL invalidate its export and late events SHALL NOT restore it or reroute that message to the network.

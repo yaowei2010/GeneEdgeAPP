@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geneapp/snp_sets.dart';
+import 'package:geneapp/snp_compute.dart';
 
 void main() {
   test(
@@ -10,6 +11,9 @@ void main() {
     final bytes = await File(set.assetPath!).readAsBytes();
     final queries = set.parse(bytes);
     expect(queries.length, 143);
+    final loci = SnpLocus.group(queries);
+    expect(loci.length, 77);
+    expect(loci.expand((q) => q.queries).length, 143);
     expect(queries.map((q) => q.id).toSet().length, 143);
     expect(
         queries

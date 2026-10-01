@@ -1,3 +1,4 @@
+import 'dart:async';
 import "package:flutter/foundation.dart";
 import "package:flutter/material.dart";
 import "package:flutter_markdown/flutter_markdown.dart";
@@ -9,17 +10,24 @@ import "models.dart";
 import "usb_gene_dongle.dart";
 import "usb_gene_dongle_page.dart";
 import "snp_compute_page.dart";
+import 'snp_compute.dart';
+import 'snp_sets.dart';
+import 'snp_chat_panel.dart';
 
 class ChatRoomPage extends StatefulWidget {
   final VoidCallback? onLogout;
   final VoidCallback? onOpenBlueMagpiePoc;
   final UsbGeneDongleController? usbGeneDongle;
+  final SnpComputeController? snpCompute;
+  final Future<List<SnpQuery>> Function(SnpSet)? snpSetLoader;
 
   const ChatRoomPage({
     super.key,
     this.onLogout,
     this.onOpenBlueMagpiePoc,
     this.usbGeneDongle,
+    this.snpCompute,
+    this.snpSetLoader,
   });
 
   @override
@@ -36,6 +44,104 @@ class _ChatRoomPageState extends State<ChatRoomPage>
   bool _panelCollapsed = true;
   UsbGeneDongleController? _usbGeneDongle;
   bool _ownsUsbGeneDongle = false;
+  late final SnpComputeController _snp;
+  ChatController? _chat;
+  ChatTopic? _snpTopic;
+  bool _offline = false;
+  List<SnpQuery>? _snpQueries;
+  String? _snpError;
+  int _loadGeneration = 0;
+  SnpSet get _snpSet => _snpTopic == ChatTopic.alcohol
+      ? SnpSets.alcohol
+      : SnpSets.catalog.firstWhere((s) => s.id == _snpTopic?.key,
+          orElse: () => const SnpSet('none', '未選主題'));
+  bool get _canOfflineSend =>
+      _snp.supported &&
+      !_snp.busy &&
+      _snpSet.available &&
+      _snpQueries != null &&
+      _snp.selectedSourceId != null;
+  void _snpChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final chat = context.read<ChatController>();
+    if (_chat != chat) {
+      _chat?.removeListener(_chatChanged);
+      _chat = chat;
+      _snpTopic = chat.topic;
+      chat.addListener(_chatChanged);
+    }
+  }
+
+  void _chatChanged() {
+    if (_chat!.topic == _snpTopic) return;
+    _snpTopic = _chat!.topic;
+    _loadGeneration++;
+    if (_snp.busy) {
+      unawaited(_snp.cancel());
+    } else {
+      _snp.clearResults();
+    }
+    if (_offline) unawaited(_loadSnpSet());
+  }
+
+  Future<void> _loadSnpSet() async {
+    final generation = ++_loadGeneration, set = _snpSet;
+    setState(() {
+      _snpQueries = null;
+      _snpError = null;
+    });
+    if (!set.available) return;
+    try {
+      final queries = await (widget.snpSetLoader?.call(set) ?? set.load());
+      SnpLocus.group(queries);
+      if (mounted && generation == _loadGeneration && _offline) {
+        setState(() => _snpQueries = queries);
+      }
+    } catch (e) {
+      if (mounted && generation == _loadGeneration && _offline) {
+        setState(() => _snpError = 'SNP set 載入失敗：$e');
+      }
+    }
+  }
+
+  void _setOffline(bool value) {
+    if (_snp.busy) return;
+    _loadGeneration++;
+    _snp.clearResults();
+    setState(() => _offline = value);
+    if (value) unawaited(_loadSnpSet());
+  }
+
+  Future<void> _send() async {
+    final text = _textCtrl.text.trim();
+    if (text.isEmpty) return;
+    final chat = context.read<ChatController>();
+    if (_offline) {
+      if (!_canOfflineSend) return;
+      try {
+        await _snp.runLoci(_snpQueries!,
+            input: _snpSet.identity,
+            context: SnpChatContext(
+                (chat.llmUserId?.trim().isNotEmpty ?? false)
+                    ? chat.llmUserId!.trim()
+                    : chat.threadId,
+                text,
+                chat.topic.label));
+        if (mounted && _snp.errorCode == null) _textCtrl.clear();
+      } catch (e) {
+        if (mounted) setState(() => _snpError = '無法開始離線運算：$e');
+      }
+    } else {
+      _textCtrl.clear();
+      await chat.sendUserMessage(text);
+    }
+    FocusManager.instance.primaryFocus?.unfocus();
+  }
 
   @override
   void initState() {
@@ -49,6 +155,9 @@ class _ChatRoomPageState extends State<ChatRoomPage>
       _ownsUsbGeneDongle = true;
     }
     _usbGeneDongle?.start();
+    _snp = widget.snpCompute ?? SnpComputeController();
+    _snp.addListener(_snpChanged);
+    unawaited(_snp.start());
     _initSpeech();
   }
 
@@ -56,6 +165,7 @@ class _ChatRoomPageState extends State<ChatRoomPage>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _usbGeneDongle?.refresh();
+      unawaited(_snp.refresh());
     }
   }
 
@@ -71,6 +181,16 @@ class _ChatRoomPageState extends State<ChatRoomPage>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     if (_ownsUsbGeneDongle) _usbGeneDongle?.dispose();
+    _loadGeneration++;
+    _chat?.removeListener(_chatChanged);
+    _snp.removeListener(_snpChanged);
+    if (widget.snpCompute == null) {
+      _snp.dispose();
+    } else if (_snp.busy) {
+      unawaited(_snp.cancel());
+    } else {
+      _snp.clearResults();
+    }
     _speech.cancel();
     _textCtrl.dispose();
     _scrollCtrl.dispose();
@@ -162,6 +282,7 @@ class _ChatRoomPageState extends State<ChatRoomPage>
   }
 
   Future<void> _openTopicPicker() async {
+    if (_snp.busy) return;
     final controller = context.read<ChatController>();
     await showModalBottomSheet<void>(
       context: context,
@@ -332,7 +453,7 @@ class _ChatRoomPageState extends State<ChatRoomPage>
   @override
   Widget build(BuildContext context) {
     final c = context.watch<ChatController>();
-    _scrollToBottom();
+    if (!_offline) _scrollToBottom();
 
     final visible = c.messages.where((m) {
       if (m.role == Role.system) return false;
@@ -393,6 +514,11 @@ class _ChatRoomPageState extends State<ChatRoomPage>
             ? null
             : () {
                 Navigator.of(context).pop();
+                if (_snp.busy) {
+                  unawaited(_snp.cancel());
+                } else {
+                  _snp.clearResults();
+                }
                 widget.onLogout!();
               },
         onOpenBlueMagpiePoc: widget.onOpenBlueMagpiePoc == null
@@ -412,7 +538,7 @@ class _ChatRoomPageState extends State<ChatRoomPage>
                 ? () {
                     Navigator.of(context).pop();
                     Navigator.of(context).push(MaterialPageRoute<void>(
-                        builder: (_) => const SnpComputePage()));
+                        builder: (_) => SnpComputePage(controller: _snp)));
                   }
                 : null,
       ),
@@ -429,40 +555,60 @@ class _ChatRoomPageState extends State<ChatRoomPage>
           ),
           child: Column(
             children: [
-              _ExperiencePanel(
-                controller: c,
-                collapsed: _panelCollapsed,
-                topicFor: _topicPresentation,
-                onToggleCollapsed: () {
-                  setState(() => _panelCollapsed = !_panelCollapsed);
-                },
-                onOpenTopicPicker: _openTopicPicker,
-                onOpenBlePicker: _openBlePicker,
-              ),
+              AbsorbPointer(
+                  absorbing: _snp.busy,
+                  child: _ExperiencePanel(
+                    controller: c,
+                    collapsed: _panelCollapsed,
+                    topicFor: _topicPresentation,
+                    onToggleCollapsed: () {
+                      setState(() => _panelCollapsed = !_panelCollapsed);
+                    },
+                    onOpenTopicPicker: _openTopicPicker,
+                    onOpenBlePicker: _openBlePicker,
+                    offline: _offline,
+                  )),
+              if (_snp.supported)
+                SwitchListTile(
+                    dense: true,
+                    title: const Text('USB 離線 SNP'),
+                    subtitle: Text(
+                        _offline ? '送出只做 C 計算及產生 JSON，不使用 AI API' : '一般聊天室模式'),
+                    value: _offline,
+                    onChanged: _snp.busy ? null : _setOffline),
               Expanded(
-                child: visible.isEmpty
-                    ? _EmptyConversation(
-                        item: _topicPresentation(c.topic),
-                        onChooseTopic: _openTopicPicker,
-                      )
-                    : ListView.builder(
+                child: _offline
+                    ? ListView(
                         controller: _scrollCtrl,
-                        keyboardDismissBehavior:
-                            ScrollViewKeyboardDismissBehavior.onDrag,
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        itemCount: visible.length,
-                        itemBuilder: (_, i) => _Bubble(msg: visible[i]),
-                      ),
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        children: [
+                            SnpChatControls(
+                                controller: _snp,
+                                set: _snpSet,
+                                queries: _snpQueries,
+                                error: _snpError),
+                            if (_snp.status == 'completed' &&
+                                _snp.locusResults.isNotEmpty)
+                              SnpChatResultCard(controller: _snp),
+                          ])
+                    : visible.isEmpty
+                        ? _EmptyConversation(
+                            item: _topicPresentation(c.topic),
+                            onChooseTopic: _openTopicPicker,
+                          )
+                        : ListView.builder(
+                            controller: _scrollCtrl,
+                            keyboardDismissBehavior:
+                                ScrollViewKeyboardDismissBehavior.onDrag,
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            itemCount: visible.length,
+                            itemBuilder: (_, i) => _Bubble(msg: visible[i]),
+                          ),
               ),
               _Composer(
                 controller: _textCtrl,
                 isListening: _isListening,
-                onSend: () async {
-                  final text = _textCtrl.text;
-                  _textCtrl.clear();
-                  FocusManager.instance.primaryFocus?.unfocus();
-                  await c.sendUserMessage(text);
-                },
+                onSend: _offline && !_canOfflineSend ? null : _send,
                 onMic: _toggleVoiceInput,
                 onMicStart: _startVoiceInput,
                 onMicEnd: _stopVoiceInput,
@@ -547,6 +693,7 @@ class _TopicBadge extends StatelessWidget {
 }
 
 class _ExperiencePanel extends StatelessWidget {
+  final bool offline;
   final ChatController controller;
   final bool collapsed;
   final TopicPresentation Function(ChatTopic topic) topicFor;
@@ -555,6 +702,7 @@ class _ExperiencePanel extends StatelessWidget {
   final VoidCallback onOpenBlePicker;
 
   const _ExperiencePanel({
+    this.offline = false,
     required this.controller,
     required this.collapsed,
     required this.topicFor,
@@ -613,9 +761,11 @@ class _ExperiencePanel extends StatelessWidget {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      controller.geneLlmEnabled
-                          ? "AI 已就緒，輸入問題即可開始"
-                          : "請開啟 GeneLLM 後開始詢問",
+                      offline
+                          ? "USB 離線 SNP · API JSON 輸出"
+                          : controller.geneLlmEnabled
+                              ? "AI 已就緒，輸入問題即可開始"
+                              : "請開啟 GeneLLM 後開始詢問",
                       style: const TextStyle(
                         fontSize: 13,
                         color: Color(0xFF607889),
@@ -644,7 +794,7 @@ class _ExperiencePanel extends StatelessWidget {
           AnimatedSize(
             duration: const Duration(milliseconds: 220),
             curve: Curves.easeInOut,
-            child: collapsed
+            child: collapsed || offline
                 ? const SizedBox.shrink()
                 : _OperationsPanel(
                     controller: controller,
@@ -1539,7 +1689,7 @@ class _BubbleContent extends StatelessWidget {
 
 class _Composer extends StatelessWidget {
   final TextEditingController controller;
-  final VoidCallback onSend;
+  final VoidCallback? onSend;
   final VoidCallback onMic;
   final VoidCallback onMicStart;
   final VoidCallback onMicEnd;
@@ -1586,7 +1736,7 @@ class _Composer extends StatelessWidget {
                       textInputAction: TextInputAction.send,
                       onTapOutside: (_) =>
                           FocusManager.instance.primaryFocus?.unfocus(),
-                      onSubmitted: (_) => onSend(),
+                      onSubmitted: onSend == null ? null : (_) => onSend!(),
                       decoration: const InputDecoration(
                         hintText: "輸入你的健康問題…",
                         border: InputBorder.none,

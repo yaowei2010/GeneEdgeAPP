@@ -257,6 +257,205 @@ class SnpResult {
       };
 }
 
+class SnpChatContext {
+  const SnpChatContext(this.userId, this.query, this.topic);
+  final String userId, query, topic;
+}
+
+class SnpLocus {
+  SnpLocus._(this.id, this.rsId, this.chromosome, this.position, this.ref,
+      this.queries);
+  final String id, rsId, chromosome, ref;
+  final int position;
+  final List<SnpQuery> queries;
+  List<String> get alleles => [ref, ...'ACGT'.split('').where((b) => b != ref)];
+  static List<SnpLocus> group(List<SnpQuery> queries) {
+    if (queries.isEmpty ||
+        queries.length > 3000 ||
+        queries.map((q) => q.id).toSet().length != queries.length) {
+      throw const FormatException('Invalid locus panel');
+    }
+    final pattern =
+        RegExp(r'^(rs[0-9]+)_([A-Za-z0-9]+)_([1-9][0-9]*)_([ACGT])_([ACGT])$');
+    final grouped = <String, List<SnpQuery>>{};
+    for (final q in queries) {
+      final m = pattern.firstMatch(q.id);
+      if (m == null ||
+          m[4] != q.ref ||
+          m[5] != q.alt ||
+          int.tryParse(m[3]!) == null) {
+        throw const FormatException('Invalid locus identity');
+      }
+      (grouped['${m[1]}_${m[2]}_${m[3]}'] ??= []).add(q);
+    }
+    return List.unmodifiable(grouped.entries.map((entry) {
+      final first = entry.value.first, m = pattern.firstMatch(first.id)!;
+      final flank = first.sequence.replaceRange(150, 151, '');
+      if (entry.value.length > 3 ||
+          entry.value.any((q) =>
+              q.ref != first.ref ||
+              q.sequence.replaceRange(150, 151, '') != flank)) {
+        throw const FormatException('同位點 REF 或側翼不一致');
+      }
+      return SnpLocus._(entry.key, m[1]!, m[2]!, int.parse(m[3]!), first.ref,
+          List.unmodifiable(entry.value));
+    }));
+  }
+}
+
+class SnpLocusResult {
+  SnpLocusResult._(this.data, this.debugTiming);
+  final Map<String, Object?> data;
+  final Map<String, double>? debugTiming;
+  String get id => data['id'] as String;
+  String get rsId => data['rsId'] as String;
+  String get refAllele => data['refAllele'] as String;
+  String get sourceId => data['sourceId'] as String;
+  String? get actualGenotype => data['actualGenotype'] as String?;
+  String get gt => data['gt'] as String;
+  factory SnpLocusResult.fromMap(Object? value) {
+    final m = _map(value);
+    final ref = _text(m, 'refAllele'),
+        id = _text(m, 'id'),
+        rs = _text(m, 'rsId'),
+        chrom = _text(m, 'chromosome');
+    final position = _count(m, 'position');
+    if (!RegExp(r'^rs[0-9]+$').hasMatch(rs) ||
+        !RegExp(r'^[A-Za-z0-9]+$').hasMatch(chrom) ||
+        position == 0 ||
+        id != '${rs}_${chrom}_$position' ||
+        !RegExp(r'^[ACGT]$').hasMatch(ref)) {
+      throw const FormatException('Invalid locus metadata');
+    }
+    final alleles = m['alleles'],
+        counts = m['baseCounts'],
+        p = m['posterior'],
+        best = m['bestGenotype'];
+    final order = [ref, ...'ACGT'.split('').where((b) => b != ref)];
+    if (alleles is! List ||
+        !listEquals(alleles, order) ||
+        counts is! List ||
+        counts.length != 4 ||
+        counts.any((n) => n is! int || n < 0) ||
+        p is! List ||
+        p.length != 10 ||
+        p.any((n) => n is! num || !n.isFinite || n < 0 || n > 1) ||
+        (p.cast<num>().fold<double>(0, (a, b) => a + b) - 1).abs() > 1e-6 ||
+        best is! List ||
+        best.length != 2 ||
+        best.any((n) => n is! int || n < 0 || n > 3) ||
+        best[0] > best[1]) {
+      throw const FormatException('Invalid joint model output');
+    }
+    final depth = counts.cast<int>().fold<int>(0, (a, b) => a + b);
+    final ambiguous = _count(m, 'ambiguous'),
+        coverage = _count(m, 'coverageOnly'),
+        total = _count(m, 'total');
+    if (depth > 1000000 ||
+        depth != _count(m, 'effectiveDepth') ||
+        total != depth + ambiguous + coverage) {
+      throw const FormatException('Invalid evidence partition');
+    }
+    final b0 = best[0] as int, b1 = best[1] as int;
+    final index = b0 * 4 - b0 * (b0 - 1) ~/ 2 + b1 - b0;
+    final bp = _milliseconds(m['bestPosterior']),
+        gap = _milliseconds(m['logScoreGap']);
+    if ((bp - (p[index] as num)).abs() > 1e-8 ||
+        p.cast<num>().any((n) => n > bp + 1e-8)) {
+      throw const FormatException('Invalid best posterior');
+    }
+    final gt = _text(m, 'gt'),
+        actual = m['actualGenotype'],
+        reason = m['noCallReason'];
+    if (gt == './.') {
+      final expectedReason = depth == 0
+          ? 'ZERO_DEPTH'
+          : depth < 10
+              ? 'LOW_DEPTH'
+              : gap <= 1e-12
+                  ? 'TIED'
+                  : bp < .99
+                      ? 'LOW_POSTERIOR'
+                      : null;
+      if (actual != null ||
+          !['ZERO_DEPTH', 'LOW_DEPTH', 'LOW_POSTERIOR', 'TIED']
+              .contains(reason) ||
+          reason != expectedReason) {
+        throw const FormatException('Invalid no-call');
+      }
+    } else if (gt != '$b0/$b1' ||
+        actual != '${order[b0]}${order[b1]}' ||
+        reason != null ||
+        depth < 10 ||
+        bp < .99 ||
+        gap <= 1e-12) {
+      throw const FormatException('Invalid called genotype');
+    }
+    final config = _map(m['parameters']);
+    if (m['modelVersion'] != 'dm-locus-research-v1' ||
+        m['calibrated'] != false ||
+        config['epsilon'] != .01 ||
+        config['rho'] != .02 ||
+        config['minDepth'] != 10 ||
+        config['minPosterior'] != .99 ||
+        config['priors'] is! List ||
+        !listEquals(config['priors'] as List, List.filled(10, .1))) {
+      throw const FormatException('Invalid research model');
+    }
+    final data = <String, Object?>{
+      'id': id,
+      'rsId': rs,
+      'chromosome': chrom,
+      'position': position,
+      'refAllele': ref,
+      'sourceId': _text(m, 'sourceId'),
+      'sourceLabel': _text(m, 'sourceLabel'),
+      'total': total,
+      'baseCounts': List<int>.unmodifiable(counts.cast<int>()),
+      'alleles': List<String>.unmodifiable(order),
+      'ambiguous': ambiguous,
+      'coverageOnly': coverage,
+      'skippedBuckets': _count(m, 'skippedBuckets'),
+      'effectiveDepth': depth,
+      'posterior':
+          List<double>.unmodifiable(p.cast<num>().map((n) => n.toDouble())),
+      'bestGenotype': List<int>.unmodifiable([b0, b1]),
+      'bestPosterior': bp,
+      'logScoreGap': gap,
+      'gt': gt,
+      'actualGenotype': actual,
+      'noCallReason': reason,
+      'modelVersion': 'dm-locus-research-v1',
+      'calibrated': false,
+      'parameters': Map<String, Object?>.unmodifiable({
+        'epsilon': .01,
+        'rho': .02,
+        'priors': List<double>.unmodifiable(List.filled(10, .1)),
+        'minDepth': 10,
+        'minPosterior': .99
+      })
+    };
+    final timing = m.containsKey('debugTiming')
+        ? _timing(
+            m['debugTiming'],
+            ['ioMs', 'countMs', 'genotypeMs', 'nativeOverheadMs'],
+            'nativeTotalMs')
+        : null;
+    return SnpLocusResult._(Map.unmodifiable(data), timing);
+  }
+  Map<String, Object?> toDiagnosticMap() => {
+        for (final entry in data.entries)
+          if (!['sourceId', 'sourceLabel'].contains(entry.key))
+            entry.key: entry.value,
+        if (debugTiming != null) 'debugTiming': debugTiming
+      };
+}
+
+abstract interface class SnpLocusComputePlatform {
+  Future<Object?> runLoci(String sourceId, List<SnpQuery> queries,
+      {bool debugEnabled = false});
+}
+
 abstract interface class SnpComputePlatform {
   Stream<Object?> get events;
   Future<Object?> sources();
@@ -268,7 +467,8 @@ abstract interface class SnpComputePlatform {
   Future<String?> pickPanel();
 }
 
-class MethodChannelSnpComputePlatform implements SnpComputePlatform {
+class MethodChannelSnpComputePlatform
+    implements SnpComputePlatform, SnpLocusComputePlatform {
   static const methods = MethodChannel('geneedge/snp_compute');
   static const eventChannel = EventChannel('geneedge/snp_compute/events');
   @override
@@ -292,6 +492,15 @@ class MethodChannelSnpComputePlatform implements SnpComputePlatform {
   @override
   Future<void> cancel() => methods.invokeMethod<void>('cancel');
   @override
+  Future<Object?> runLoci(String sourceId, List<SnpQuery> queries,
+          {bool debugEnabled = false}) =>
+      methods.invokeMethod('run', {
+        'sourceId': sourceId,
+        'mode': 'locus',
+        if (debugEnabled) 'debugEnabled': true,
+        'queries': queries.map((q) => q.toMap()).toList()
+      });
+  @override
   Future<String?> pickPanel() => methods.invokeMethod<String>('pickPanel');
 }
 
@@ -306,10 +515,14 @@ class SnpComputeController extends ChangeNotifier {
   final SnpComputePlatform _platform;
   final bool supported;
   String status = 'idle';
-  String? errorCode, selectedSourceId, _jobId;
+  String? errorCode, selectedSourceId, _jobId, resultJobId;
   int completed = 0, total = 0, _revision = -1, _generation = 0;
   List<Map<Object?, Object?>> sources = const [], volumes = const [];
   List<SnpResult> results = const [];
+  List<SnpLocusResult> locusResults = const [];
+  List<SnpLocus> _loci = const [];
+  SnpChatContext? _jobContext, resultContext;
+  bool _locusMode = false;
   bool _debugEnabled = false, _jobDebug = false;
   bool get debugEnabled => _debugEnabled;
   Map<String, double>? batchTiming;
@@ -327,6 +540,9 @@ class SnpComputeController extends ChangeNotifier {
 
   void _clearOutput() {
     results = const [];
+    locusResults = const [];
+    resultContext = null;
+    resultJobId = null;
     batchTiming = null;
     debugReport = null;
     elapsedMs = null;
@@ -449,8 +665,12 @@ class SnpComputeController extends ChangeNotifier {
   }
 
   Future<String?> pickPanel() => _platform.pickPanel();
+  Future<void> runLoci(List<SnpQuery> queries,
+          {required SnpInputIdentity input, required SnpChatContext context}) =>
+      run(queries, input: input, chat: context);
   Future<void> run(List<SnpQuery> queries,
-      {SnpInputIdentity input =
+      {SnpChatContext? chat,
+      SnpInputIdentity input =
           const SnpInputIdentity('single', '單 SNP', 'custom')}) async {
     if (!supported || _disposed || busy) return;
     if (selectedSourceId == null ||
@@ -460,6 +680,9 @@ class SnpComputeController extends ChangeNotifier {
       throw const FormatException('請選擇 USB 資料來源並提供有效查詢');
     }
     final generation = ++_generation;
+    _locusMode = chat != null;
+    _loci = _locusMode ? SnpLocus.group(queries) : const [];
+    _jobContext = chat;
     _jobDebug = _debugEnabled;
     _jobInput = input;
     _queries = List.unmodifiable(queries);
@@ -470,12 +693,23 @@ class SnpComputeController extends ChangeNotifier {
     _clearOutput();
     status = 'running';
     completed = 0;
-    total = queries.length;
+    total = _locusMode ? _loci.length : queries.length;
     errorCode = null;
     _notify();
     try {
-      final response = _map(await _platform.run(selectedSourceId!, _queries,
-          debugEnabled: _jobDebug));
+      final Object? wire;
+      if (_locusMode) {
+        final platform = _platform;
+        if (platform is! SnpLocusComputePlatform) {
+          throw PlatformException(code: 'UNSUPPORTED_PLATFORM');
+        }
+        wire = await (platform as SnpLocusComputePlatform)
+            .runLoci(selectedSourceId!, _queries, debugEnabled: _jobDebug);
+      } else {
+        wire = await _platform.run(selectedSourceId!, _queries,
+            debugEnabled: _jobDebug);
+      }
+      final response = _map(wire);
       if (_disposed || generation != _generation) return;
       _jobId = _text(response, 'jobId');
       _pending = false;
@@ -497,6 +731,11 @@ class SnpComputeController extends ChangeNotifier {
       final revision = _count(m, 'revision');
       if (revision <= _revision) return;
       final state = _text(m, 'status');
+      if (state == 'sourcesChanged') {
+        _revision = revision;
+        unawaited(refresh());
+        return;
+      }
       if (state == 'invalidated') {
         _revision = revision;
         _generation++;
@@ -536,15 +775,33 @@ class SnpComputeController extends ChangeNotifier {
       }
       final done = _count(m, 'completed'), all = _count(m, 'total');
       if (done > all) throw const FormatException('Invalid progress');
-      final parsed = state == 'completed'
+      final parsed = state == 'completed' && !_locusMode
           ? ((m['results'] as List).map(SnpResult.fromMap).toList())
           : <SnpResult>[];
+      final parsedLoci = state == 'completed' && _locusMode
+          ? ((m['results'] as List).map(SnpLocusResult.fromMap).toList())
+          : <SnpLocusResult>[];
       if (all != total ||
-          (state == 'completed' && (done != all || parsed.length != all))) {
+          (state == 'completed' &&
+              (done != all ||
+                  (_locusMode ? parsedLoci.length : parsed.length) != all))) {
         throw const FormatException('Incomplete results');
       }
       Map<String, double>? timing;
       if (state == 'completed') {
+        if (_locusMode) {
+          if (m['mode'] != 'locus') {
+            throw const FormatException('Unexpected run mode');
+          }
+          for (var i = 0; i < parsedLoci.length; i++) {
+            final r = parsedLoci[i], q = _loci[i];
+            if (r.id != q.id ||
+                r.refAllele != q.ref ||
+                r.sourceId != selectedSourceId) {
+              throw const FormatException('Invalid locus/source identity');
+            }
+          }
+        }
         for (var i = 0; i < parsed.length; i++) {
           final r = parsed[i], q = _queries[i];
           if (r.id != q.id ||
@@ -565,18 +822,22 @@ class SnpComputeController extends ChangeNotifier {
             ('genotypeMs', 'genotypeMs')
           ]) {
             double sum = 0;
-            for (final row in parsed) {
-              if (row.debugTiming == null) {
+            final rows = _locusMode
+                ? parsedLoci.map((r) => r.debugTiming)
+                : parsed.map((r) => r.debugTiming);
+            for (final row in rows) {
+              if (row == null) {
                 throw const FormatException('Missing native timing');
               }
-              sum += row.debugTiming![pair.$2]!;
+              sum += row[pair.$2]!;
             }
             if ((sum - timing[pair.$1]!).abs() > .01) {
               throw const FormatException('Invalid batch timing sum');
             }
           }
         } else if (m.containsKey('debugTiming') ||
-            parsed.any((r) => r.debugTiming != null)) {
+            parsed.any((r) => r.debugTiming != null) ||
+            parsedLoci.any((r) => r.debugTiming != null)) {
           throw const FormatException('Unexpected debug payload');
         }
       }
@@ -585,6 +846,9 @@ class SnpComputeController extends ChangeNotifier {
       completed = done;
       total = all;
       results = List.unmodifiable(parsed);
+      locusResults = List.unmodifiable(parsedLoci);
+      resultContext = state == 'completed' ? _jobContext : null;
+      resultJobId = state == 'completed' ? _jobId : null;
       batchTiming = timing;
       debugReport = null;
       resultInput = state == 'completed' ? _jobInput : null;
@@ -593,14 +857,16 @@ class SnpComputeController extends ChangeNotifier {
           : null;
       if (_jobDebug && state == 'completed') {
         debugReport = const JsonEncoder.withIndent('  ').convert({
-          'schemaVersion': 1,
+          'schemaVersion': _locusMode ? 2 : 1,
           'jobId': _jobId,
           'status': state,
           'completed': done,
           'total': all,
           'inputSet': _jobInput.toMap(),
           'debugTiming': timing,
-          'results': parsed.map((r) => r.toDebugMap()).toList(),
+          'results': _locusMode
+              ? parsedLoci.map((r) => r.toDiagnosticMap()).toList()
+              : parsed.map((r) => r.toDebugMap()).toList(),
         });
       }
       errorCode = m['errorCode'] as String?;
@@ -633,7 +899,10 @@ class SnpComputeController extends ChangeNotifier {
     _disposed = true;
     _generation++;
     _jobId = null;
-    results = const [];
+    _clearOutput();
+    _jobContext = null;
+    _queries = const [];
+    _loci = const [];
     _early.clear();
     unawaited(_sub?.cancel());
     if (busy) unawaited(_platform.cancel().catchError((Object _) {}));

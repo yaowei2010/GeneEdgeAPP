@@ -11,6 +11,7 @@ import java.nio.file.Path;
 public final class SnpComputePlugin {
     private boolean cancelled;
     private boolean callbackThrows;
+    private native String nativeComputeLocus(int idx,int ids,String[] sequences,String ref,long token,boolean debug);
     private native String nativeCompute(int idx, int ids, String sequence, String ref, String alt, long token, boolean debug);
     private String nativeCompute(int idx, int ids, String sequence, String ref, String alt, long token) {
         return nativeCompute(idx, ids, sequence, ref, alt, token, false);
@@ -79,6 +80,19 @@ public final class SnpComputePlugin {
             require(Math.abs(time(debug,"nativeTotalMs") - time(debug,"ioMs") - time(debug,"countMs")
                 - time(debug,"genotypeMs") - time(debug,"nativeOverheadMs")) < 0.01);
             // Caller descriptors remain valid after each native call.
+            String locus=plugin.nativeComputeLocus(ifd,dfd,new String[]{ref,alt},"A",1,false);
+            require(locus.contains("\"baseCounts\":[20,20,0,0]")&&locus.contains("\"actualGenotype\":\"AC\""));
+            require(locus.contains("\"modelVersion\":\"dm-locus-research-v1\"")&&!locus.contains("debugTiming"));
+            String measured=plugin.nativeComputeLocus(ifd,dfd,new String[]{ref,alt},"A",1,true);
+            require(measured.startsWith(locus.substring(0,locus.length()-1)));
+            require(Math.abs(time(measured,"nativeTotalMs")-time(measured,"ioMs")-time(measured,"countMs")
+                -time(measured,"genotypeMs")-time(measured,"nativeOverheadMs"))<.01);
+            require(plugin.nativeComputeLocus(ifd,dfd,new String[]{ref,"A"},"A",1,false).contains("INVALID_QUERY"));
+            require(plugin.nativeComputeLocus(ifd,dfd,new String[]{ref,"T"+alt.substring(1)},"A",1,false).contains("INVALID_QUERY"));
+            plugin.cancelled=true;
+            require(plugin.nativeComputeLocus(ifd,dfd,new String[]{ref},"A",1,true).contains("CANCELLED"));
+            plugin.cancelled=false;
+            for(int i=0;i<77;i++)require(plugin.nativeComputeLocus(ifd,dfd,new String[]{ref,alt},"A",1,false).equals(locus));
             require(idx.length() == 536870912 && ids.length() > 4294967296L);
             System.out.println("JNI + C engine + C genotype integration passed");
         } finally { Files.deleteIfExists(index); Files.deleteIfExists(postings); }

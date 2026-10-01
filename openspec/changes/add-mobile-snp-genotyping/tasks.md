@@ -30,11 +30,18 @@
 
 ## 6. 聊天室與每位點聯合判定
 
-- [ ] 6.1 在本組程式修改前，將目前可用set／debug版及相關規格限定檔案Git備份到遠端codex/分支；核對commit檔案清單與git ls-remote SHA並記錄回復位置，不夾帶其他功能。
-- [ ] 6.2 依賴6.1，以失敗測試實作 Joint locus evidence and statistical genotyping／同位點聯合統計模型 的C共同四等位read表；驗證REF／側翼一致、四類互斥計數、跨ALT與方向去重、ambiguous／coverageOnly、candidate上限、取消、I/O錯誤及64bit位置，於test/native/snp_locus_test.c核對已知fixture，不用舊aggregate計數替代。
-- [ ] 6.3 接續6.2，以test/native/locus_genotype_model_test.c失敗測試實作獨立C dm-locus-research-v1：10候選Dirichlet-multinomial、均等prior、posterior與最大後驗／no-call；與獨立數值參考核對，驗證100C/100G選C/G、低深度、並列、鹼基置換對稱、極端計數與非法參數，保留legacy beta-binomial tests。
-- [ ] 6.4 接續6.3，新增JNI／Android明確locus run模式及77列契約、原生四類counts／posterior／實際GT／模型版本與逐位點debug；保留舊run格式與取消／FD所有權。以真正JNI fixture、Android契約tests及debug on/off對照驗證77位點事件、有限時間分解與stale guard。
-- [ ] 6.5 接續6.4，實作snp_sets分組及controller的query／topic／set／source job快照、locus完整性驗證、77/77、debug與失效清除；以test/snp_compute_test.dart及test/snp_sets_test.dart驗證143原始記錄→77同側翼位點、REF錯誤拒絕、取消／來源變更／晚到事件不可還原舊結果。
-- [ ] 6.6 接續6.5，以test/snp_api_payload_test.dart失敗測試實作 Unique-locus API JSON export／聊天室離線流程與API JSON 的純serializer：askLlm精確欄位與三份相同variants、GT鹼基轉換、每位點唯一、重複rsID跨座標拒絕、77/70/7計數、diagnostic schemaVersion=2，不含序列／read ID／URI，debug off仍可產生但無網路／自動保存。
-- [ ] 6.7 接續6.6，以聊天室widget失敗測試實作 Chat-integrated offline USB computation：原有主題映射set、明確USB離線模式、輸入文字送出C、來源／權限、載入／錯誤、進度／取消、暫存結果／JSON與分段計時卡片／顯式複製。驗證同頁完成77/77、一般聊天仍原路徑、busy鎖定、未提供set禁用、拔除／登出清空、禁止HTTP／持久化／自動TTS，不要求導頁。
-- [ ] 6.8 接續6.7，更新docs/mobile-snp-genotyping.md的聊天室操作、JSON範例、joint模型與legacy區分、校準限制及Pixel測試；執行native／JNI、Flutter全套test／analyze、Android相關tests、ARM64 build，分開紀錄fixture與真實USB驗收。未執行實機測試不得勾選3.3。
+- [x] 6.1 在本組程式修改前，將目前可用set／debug版及相關規格限定檔案Git備份到遠端codex/分支；核對commit檔案清單與git ls-remote SHA並記錄回復位置，不夾帶其他功能。
+- [x] 6.2 依賴6.1，以失敗測試實作 Joint locus evidence and statistical genotyping／同位點聯合統計模型 的C共同四等位read表；驗證REF／側翼一致、四類互斥計數、跨ALT與方向去重、ambiguous／coverageOnly、candidate上限、取消、I/O錯誤及64bit位置，於test/native/snp_locus_test.c核對已知fixture，不用舊aggregate計數替代。
+- [x] 6.3 接續6.2，以test/native/locus_genotype_model_test.c失敗測試實作獨立C dm-locus-research-v1：10候選Dirichlet-multinomial、均等prior、posterior與最大後驗／no-call；與獨立數值參考核對，驗證100C/100G選C/G、低深度、並列、鹼基置換對稱、極端計數與非法參數，保留legacy beta-binomial tests。
+- [x] 6.4 接續6.3，新增JNI／Android明確locus run模式及77列契約、原生四類counts／posterior／實際GT／模型版本與逐位點debug；保留舊run格式與取消／FD所有權。以真正JNI fixture、Android契約tests及debug on/off對照驗證77位點事件、有限時間分解與stale guard。
+- [x] 6.5 接續6.4，實作snp_sets分組及controller的query／topic／set／source job快照、locus完整性驗證、77/77、debug與失效清除；以test/snp_compute_test.dart、test/snp_locus_compute_test.dart及test/snp_sets_test.dart驗證143原始記錄→77同側翼位點、REF錯誤拒絕、取消／來源變更／晚到事件不可還原舊結果。
+- [x] 6.6 接續6.5，以test/snp_api_payload_test.dart失敗測試實作 Unique-locus API JSON export／聊天室離線流程與API JSON 的純serializer：askLlm精確欄位與三份相同variants、GT鹼基轉換、每位點唯一、重複rsID跨座標拒絕、77/70/7計數、diagnostic schemaVersion=2，不含序列／read ID／URI，debug off仍可產生但無網路／自動保存。
+- [x] 6.7 接續6.6，以聊天室widget失敗測試實作 Chat-integrated offline USB computation：原有主題映射set、明確USB離線模式、輸入文字送出C、來源／權限、載入／錯誤、進度／取消、暫存結果／JSON與分段計時卡片／顯式複製。驗證同頁完成77/77、一般聊天仍原路徑、busy鎖定、未提供set禁用、拔除／登出清空、禁止HTTP／持久化／自動TTS，不要求導頁。
+- [x] 6.8 接續6.7，更新docs/mobile-snp-genotyping.md的聊天室操作、JSON範例、joint模型與legacy區分、校準限制及Pixel測試；執行native／JNI、Flutter全套test／analyze、Android相關tests、ARM64 build，分開紀錄fixture與真實USB驗收。未執行實機測試不得勾選3.3。
+
+## 7. USB來源與原聊天室訊息流修正
+
+- [ ] 7.1 在介面程式修改前，將已安裝的聊天室joint版與本次相關規格限定檔案備份至遠端codex/分支；以commit清單及git ls-remote核對SHA，排除其他功能與個人資料，於文件記錄回復位置。
+- [ ] 7.2 依賴7.1，以test/snp_chat_panel_test.dart失敗測試實作 USB-source chat message flow／USB運算來源與原聊天訊息流 的送出路由：移除USB離線開關，從sources／volumes判斷USB、主題預載set、ready時送出runLoci，未授權／多來源未選／無set／載入中或錯誤明示禁用且無BLE／Local JSON／HTTP fallback；驗證busy與拔除guard，無USB時原聊天路徑不變。
+- [ ] 7.3 接續7.2，以聊天室widget失敗測試將USB狀態／授權／來源與debug改為可展開操作，保留原聊天泡泡與composer，在同一訊息流末端顯示最新暫存使用者泡泡及計算進度／取消／結果／API JSON卡片；驗證143參考→77/77、舊泡泡可見、顯式複製、debug分段時間、取消／拔除／登出清空匯出與stale抑制、禁止持久化／TTS／網路，不重寫C模型或serializer。
+- [ ] 7.4 接續7.3更新docs/mobile-snp-genotyping.md的USB送出流程與已安裝／實測狀態；執行全套Flutter test／analyze、native／JNI回歸、ARM64 build，記錄結果。提供Pixel測試步驟；僅在使用者要求安裝時執行install -r，無真實USB验收仍保持3.3未完成。

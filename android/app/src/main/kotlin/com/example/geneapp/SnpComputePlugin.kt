@@ -46,9 +46,13 @@ class SnpComputePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallH
     private var picker: MethodChannel.Result? = null
     private var pickerVolume: String? = null
     private val receiver = object : BroadcastReceiver() {
-        override fun onReceive(c: Context?, i: Intent?) { invalidate("USB_REMOVED"); sources = emptyMap() }
+        override fun onReceive(c: Context?, i: Intent?) {
+            invalidate("USB_REMOVED"); sources = emptyMap()
+            emit(mapOf("status" to "sourcesChanged"))
+        }
     }
     private external fun nativeCompute(idx: Int, ids: Int, sequence: String, ref: String, alt: String, token: Long, debug: Boolean): String
+    private external fun nativeComputeLocus(idx:Int,ids:Int,sequences:Array<String>,ref:String,token:Long,debug:Boolean):String
     // Called from JNI in the worker. No UI state is accessed from that thread.
     fun isCancelled(token: Long): Boolean = !gate.current(token) || Thread.currentThread().isInterrupted
     companion object { init { System.loadLibrary("geneedge_snp") } }
@@ -205,11 +209,14 @@ class SnpComputePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallH
             SnpQuery(m["id"] as? String ?: "", m["sequence"] as? String ?: "", m["ref"] as? String ?: "", m["alt"] as? String ?: "")
         }
         if (!SnpContracts.validQueries(queries)) throw SnpFailure("INVALID_QUERY")
+        val locusMode=SnpContracts.locusMode(call.argument<Any?>("mode"))
+        val loci=if(locusMode) SnpContracts.loci(queries) else emptyList()
+        val workCount=if(locusMode) loci.size else queries.size
         val debug = SnpDebug.enabled(call.argument<Any?>("debugEnabled"))
         val token = gate.start(); val jobId = token.toString()
-        this.jobId = jobId; jobCompleted = 0; jobTotal = queries.size; jobDebug = debug; jobStarted = 0L
+        this.jobId = jobId; jobCompleted = 0; jobTotal = workCount; jobDebug = debug; jobStarted = 0L
         result.success(mapOf("jobId" to jobId))
-        emit(mapOf("jobId" to jobId, "status" to "running", "completed" to 0, "total" to queries.size))
+        emit(mapOf("jobId" to jobId, "status" to "running", "completed" to 0, "total" to workCount))
         worker.execute {
             val began = if (debug) SystemClock.elapsedRealtimeNanos() else 0L
             jobStarted = began
@@ -227,15 +234,27 @@ class SnpComputePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallH
                         catch (_: Exception) { throw SnpFailure("NOT_SEEKABLE") }
                         val setupMs = if (debug) (SystemClock.elapsedRealtimeNanos()-setupStart)/1e6 else 0.0
                         val rows = mutableListOf<Map<String, Any?>>()
-                        queries.forEachIndexed { index, q ->
+                        for(index in 0 until workCount) {
                             if (isCancelled(token)) throw SnpFailure("CANCELLED")
-                            val data = JSONObject(nativeCompute(idx.fd, ids.fd, q.sequence, q.ref, q.alt, token, debug))
+                            val metadata:Map<String,Any?>
+                            val native:String
+                            if(locusMode) {
+                                val q=loci[index]
+                                native=nativeComputeLocus(idx.fd,ids.fd,q.sequences.toTypedArray(),q.ref,token,debug)
+                                metadata=mapOf("id" to q.id,"rsId" to q.rsId,"chromosome" to q.chromosome,
+                                    "position" to q.position,"refAllele" to q.ref)
+                            }else {
+                                val q=queries[index]
+                                native=nativeCompute(idx.fd,ids.fd,q.sequence,q.ref,q.alt,token,debug)
+                                metadata=mapOf("id" to q.id,"refAllele" to q.ref,"altAllele" to q.alt)
+                            }
+                            val data=JSONObject(native)
                             if (data.has("errorCode")) throw SnpFailure(data.getString("errorCode"))
-                            rows.add(jsonMap(data) + mapOf("id" to q.id, "refAllele" to q.ref, "altAllele" to q.alt,
-                                "sourceId" to id, "sourceLabel" to source.folder.name))
+                            rows.add(jsonMap(data)+metadata+mapOf("sourceId" to id,"sourceLabel" to source.folder.name))
                             main.post { if (gate.current(token)) { jobCompleted = index + 1; emit(mapOf("jobId" to jobId, "status" to "running")) } }
                         }
-                        val event = mapOf("jobId" to jobId, "status" to "completed", "completed" to queries.size, "total" to queries.size, "results" to rows)
+                        val event = mapOf("jobId" to jobId, "status" to "completed", "completed" to workCount, "total" to workCount,
+                            "mode" to if(locusMode) "locus" else "query", "results" to rows)
                         val timing = if (debug) mapOf("debugTiming" to SnpDebug.batch(rows,setupMs,(SystemClock.elapsedRealtimeNanos()-began)/1e6)) else emptyMap()
                         // Logging is outside the measured result-construction boundary.
                         if (debug && gate.current(token)) {

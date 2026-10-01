@@ -11,6 +11,12 @@ task_native_source="android/app/src/main/cpp/snp"
 clang -std=c99 -Wall -Wextra -Werror -pedantic -fsanitize=undefined \
   test/native/snp_engine_test.c "$task_native_source/snp_engine.c" -o "$task_native_dir/engine"
 "$task_native_dir/engine"
+clang -std=c99 -Wall -Wextra -Werror -pedantic -fsanitize=undefined \
+  test/native/snp_locus_test.c "$task_native_source/snp_engine.c" -o "$task_native_dir/locus"
+"$task_native_dir/locus"
+clang -std=c99 -Wall -Wextra -Werror -Wconversion -pedantic -fsanitize=undefined \
+  test/native/locus_genotype_model_test.c "$task_native_source/locus_genotype_model.c" -lm -o "$task_native_dir/locus-model"
+"$task_native_dir/locus-model"
 clang -std=c99 -Wall -Wextra -Werror -Wconversion -pedantic -fsanitize=undefined \
   -I"$task_native_source" test/native/genotype_model_test.c "$task_native_source/genotype_model.c" \
   -lm -o "$task_native_dir/model"
@@ -33,9 +39,10 @@ else
 fi
 clang -std=c99 -Wall -Wextra -Werror -fPIC -c "$task_native_source/snp_engine.c" -o "$task_native_dir/engine.o"
 clang -std=c99 -Wall -Wextra -Werror -fPIC -c "$task_native_source/genotype_model.c" -o "$task_native_dir/model.o"
+clang -std=c99 -Wall -Wextra -Werror -fPIC -c "$task_native_source/locus_genotype_model.c" -o "$task_native_dir/locus-model.o"
 clang++ -std=c++17 -Wall -Wextra -Werror -fPIC "$task_jni_link" \
   -I"$task_jdk/include" -I"$task_jdk/include/$task_jni_os" "$task_native_source/snp_bridge.cpp" \
-  "$task_native_dir/engine.o" "$task_native_dir/model.o" -o "$task_jni_lib"
+  "$task_native_dir/engine.o" "$task_native_dir/model.o" "$task_native_dir/locus-model.o" -o "$task_jni_lib"
 "$task_jdk/bin/javac" -d "$task_native_dir" test/native/jni/com/example/geneapp/SnpComputePlugin.java
 "$task_jdk/bin/java" --add-opens java.base/java.io=ALL-UNNAMED \
   -cp "$task_native_dir" com.example.geneapp.SnpComputePlugin "$task_jni_lib"

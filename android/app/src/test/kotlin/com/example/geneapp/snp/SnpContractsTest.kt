@@ -6,6 +6,20 @@ import org.junit.Test
 import java.io.ByteArrayInputStream
 
 class SnpContractsTest {
+    @Test fun locusModeGroupsQueriesAndRejectsConflictingFlanks() {
+        val seq="A".repeat(301)
+        val one=SnpQuery("rs1_4_100_A_C",seq,"A","C")
+        val two=one.copy(id="rs1_4_100_A_G",alt="G")
+        val loci=SnpContracts.loci(listOf(one,two))
+        assertEquals(1,loci.size);assertEquals("rs1",loci[0].rsId);assertEquals(2,loci[0].sequences.size)
+        assertEquals("4",loci[0].chromosome);assertEquals(100L,loci[0].position)
+        listOf(two.copy(sequence="C"+seq.drop(1)),two.copy(ref="C"),two.copy(id="manual")).forEach {
+            try { SnpContracts.loci(listOf(one,it));fail() }
+            catch(e:SnpFailure){assertEquals("INVALID_QUERY",e.code)}
+        }
+        assertFalse(SnpContracts.locusMode(null));assertTrue(SnpContracts.locusMode("locus"))
+        try { SnpContracts.locusMode(true);fail() } catch(e:SnpFailure){assertEquals("INVALID_QUERY",e.code)}
+    }
     private fun entry(name: String, dir: Boolean = false) = GeneEntry(name, name, dir)
     @Test fun discoversAllPairsWithoutReadingContents() {
         val root = entry("root", true); val sub = entry("sub", true)

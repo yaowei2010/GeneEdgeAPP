@@ -1,32 +1,45 @@
 # 手機 USB 離線 SNP 運算
 
-此版計數與 beta-binomial genotyping 均使用 C；Flutter 只管理輸入／畫面，Kotlin／JNI 只管理 USB 權限、FD 與工作生命週期。AI URL API 未修改，尚未把研究結果自動送至 LLM。
+聊天室新版的四等位聯合計數與 Dirichlet-multinomial genotyping 均使用 C；Flutter 只管理輸入／畫面／JSON轉換，Kotlin／JNI 只管理 USB 權限、FD 與工作生命週期。原本獨立頁的二等位 beta-binomial 模式保留。AI URL API 未修改，不自動把研究結果送至 LLM。
 
 ## 操作
 
-1. 插入 USB，在聊天頁側欄開啟「手機 SNP 運算」。這是獨立入口，不需先完成舊「USB / Gene dongle」匯入。
+1. 插入 USB，在原本聊天室選「酒精」主題，開啟「USB 離線 SNP」。不需進入獨立頁或先完成舊「USB / Gene dongle」匯入；插入不會自動計算。
 2. 首次授予 USB 資料夾唯讀權限。來源必須是掛載的 removable 儲存 UUID，拒絕手機 primary 儲存。選定含精確檔名 combined_idx_all.txt 與 combined_ids_all.txt 的同目錄雙檔；多組時自行選擇。
-3. SNP set 預選「酒精代謝（77 位點／143 查詢）」，自動載入內建參考資料，不需貼序列。確認「已載入143筆等位查詢」及版本alcohol-set143-k150-v1；其他主題尚未提供資料，不能執行。單SNP／自訂FASTA保留在「進階：自訂查詢」，沿用301bp／中心REF或ALT、最多3000筆及2MiB限制。
-4. 若要檢查結果與耗時，先啟用「Debug：結果與分段計時」（預設關閉）。再按「開始 C 離線運算」，進度應到143/143，每列保留完整查詢ID、REF／ALT計數、posterior與GT／no-call。工作中不能切換模式／set／debug。
-5. 完成後查看整批與逐筆計時，展開「查看 debug 結果」可選取JSON，或按「複製 debug 結果」。取消、拔除、變更來源或模式會清除結果與可複製報告；取消／失敗只顯示已量測elapsedMs，不宣稱整批完成。
+3. 主題帶入「酒精代謝」內建參考set，確認143筆參考／77位點及版本alcohol-set143-k150-v1。其他主題尚未提供set時離線送出不可用，但一般聊天仍可用；載入失敗或尚未選USB也不可開始。
+4. 若要檢查耗時，先啟用「Debug：結果與分段計時」（預設關閉）。在聊天輸入框輸入問題並送出，會帶入當下文字／主題／set／來源快照執行C，進度到77/77。工作中鎖定主題／模式／debug，可取消。
+5. 完成卡片包含每位點唯一GT或no-call、四類計數、10候選posterior，以及debug啟用時的分段時間。展開API JSON或按「複製 API JSON」；debug關閉仍可取得API JSON。複製是顯式操作，基因資訊會進剪貼簿。
+6. 取消、拔除、變更來源／主題／模式、登出會清除暫存結果及可複製JSON，晚到事件不可還原。離線文字／結果不寫進聊天歷史、不自動TTS／HTTP／LLM。取消／失敗只顯示已量測elapsedMs，不宣稱完成。
 
-酒精參考asset來自MXIC_NCKU_demo_v4/ref_dataset/alcohol.set143.k150.fasta，SHA-256為0bc77278d47ddcf41f1bbf4ef6f879d47f86c2d06791c0e29c5c0812a72b73f9，原始bytes未改動。143筆是77個位點的等位查詢，例如rs1229984有T_C、T_A、T_G；完整header區分query id，原始順序／序列／REF／ALT保留。每列使用獨立二等位模型，不是多等位聯合GT，不能加總同位點的各列深度或當成143個獨立SNP。只有參考查詢內建，個人combined資料仍直接讀USB。
+側欄「手機 SNP 運算」保留為進階／legacy工具，單SNP與外部FASTA仍支援301bp、最多3000筆及2MiB限制；該頁酒精set執行143筆獨立二等位查詢、進度143/143，不是聊天室77位點聯合判定。
+
+酒精參考asset來自MXIC_NCKU_demo_v4/ref_dataset/alcohol.set143.k150.fasta，SHA-256為0bc77278d47ddcf41f1bbf4ef6f879d47f86c2d06791c0e29c5c0812a72b73f9，原始bytes未改動。143筆是77個位點的等位查詢，例如rs1229984有T_C、T_A、T_G；完整header／原始bytes保留。聊天室依rsID、染色體、位置分組，驗證共同REF及300bp側翼，四種中心鹼基共用read去重表，不加總獨立ALT查詢的REF深度。只有參考查詢內建，個人combined資料仍直接讀USB。
+
+## API JSON
+
+純serializer沿用ApiService.askLlm欄位；user_id取llmUserId非空值，否則threadId，query／中文topic取工作快照。以下是示意資料，不是實測：
+
+```json
+{"user_id":"example","query":"我能喝酒嗎","topic":"酒精","SNP_list":["rs1229984-TC"],"snp_list":["rs1229984-TC"],"variants":["rs1229984-TC"],"variant_input_count":77,"variant_used_count":1,"no_call_count":76,"yuguard":null}
+```
+
+三份variant列表相同，GT indices轉成實際鹼基並保留REF優先排序，不包含斜線。同位點只一筆；no-call不放入API列表，仍留在診斷。重複rsID跨座標拒絕匯出。診斷schemaVersion=2另外包含jobId、set／模型版本、全部位點結果及可選debugTiming，不把URI、read ID、序列或診斷欄位混進API request。沒有新增自動傳輸或保存。
 
 ## Debug 分段計時
 
-時間單位ms，量測的是單調時鐘經過時間，不是CPU使用時間。整批包含USB開檔／大小及seek檢查（setupIoMs）、C實際索引／posting讀取與metadata探測（queryIoMs）、扣除I/O後的SNP查詢／去重／計數（countMs）、C beta-binomial（genotypeMs）、其餘橋接／控制／結果處理（overheadMs）、totalMs。每列另有ioMs、countMs、genotypeMs、nativeOverheadMs及nativeTotalMs。分解不得重複累計；Dart拒絕非有限／負值、分解或逐列加總不一致的時間。
+時間單位ms，量測的是單調時鐘經過時間，不是CPU使用時間。整批包含USB開檔／大小及seek檢查（setupIoMs）、C實際索引／posting讀取與metadata探測（queryIoMs）、扣除I/O後的SNP查詢／去重／計數（countMs）、C模型（genotypeMs）、其餘橋接／控制／結果處理（overheadMs）、totalMs。每列另有ioMs、countMs、genotypeMs、nativeOverheadMs及nativeTotalMs。聊天室重新量測77個聯合位點，不加總legacy143列時間。分解不得重複累計；Dart拒絕非有限／負值、分解或逐列加總不一致的時間。
 
 totalMs从worker開始到結果結構建置完成，不含排程等待、Flutter渲染、剪貼簿、logcat及FD關閉cleanup。I/O包含provider與系統cache，不等同實體USB磁碟耗時；計數阶段含查詢控制／取消檢查，並非CPU profiler。debug關閉時不做逐讀取clock量測；開啟本身有量測開銷，快取也會影響重跑結果，不能據此承諾某一手機的效能。
 
-啟用debug才會輸出GeneEdgeSnp logcat摘要，每行有界並escaped，不含序列、原始read ID、source URI或檔案內容；報告schemaVersion=1含set版本、各列結果及計時。這些摘要仍是敏感基因資訊，複製會進剪貼簿，日誌可能被偵錯工具看到；不自動保存、上傳或呼叫LLM。
+啟用debug才會輸出GeneEdgeSnp logcat摘要，每行有界並escaped，不含序列、原始read ID、source URI或檔案內容；聊天室報告schemaVersion=2（legacy為1）含set版本、各列結果及計時。這些摘要仍是敏感基因資訊，複製會進剪貼簿，日誌可能被偵錯工具看到；不自動保存、上傳或呼叫LLM。
 
 ## Pixel／真實USB驗收
 
-1. 開啟手機SNP運算、選酒精set，確認77位點／143查詢、版本及載入成功；授權並選定真實USBpair，不使用舊匯入入口。
-2. 開啟debug、開始，確認UI仍可取消；完成應143/143、143列與相同set版本。複製報告核對各階段總和，no-call為研究模型結果，不等於讀取失敗。
+1. 在聊天室開啟USB離線SNP、選酒精主題，確認77位點／143參考、版本及載入成功；授權並選定真實USBpair，不使用舊匯入入口。
+2. 開啟debug、輸入問題並送出，確認UI仍可取消；完成應77/77、77列與相同set版本。核對API三份列表一致、每rsID唯一、input77、used加no_call等於77；複製診斷核對各階段總和，no-call不等於讀取失敗。
 3. 關閉debug再跑，對照計數、posterior與GT完全一致；分段報告與新增基因結果日誌應不出現。重跑快取不同時不可直接把时间差歸因於演算法。
 4. 運算中按取消、另次運算中拔除USB，確認不出現完成結果／舊報告；重新接入後重新掃描與選來源。
-5. 用已知人工fixture或獨立桌面C核對選定query的counts，再驗證模型；沒有真實GT時不宣稱生物判定正確。記錄手機、set版本、USB來源、結果／錯誤、記憶體與分段時間。
+5. 用已知人工fixture或獨立桌面C核對位點四類counts、跨ALT去重與10候選posterior；total=四類counts+ambiguous+coverageOnly。驗證登出／主題切換清空、一般聊天未改動。沒有真實GT時不宣稱生物判定正確。記錄手機、set版本、USB來源、結果／錯誤、記憶體與分段時間。
 
 新計算入口直接按索引唯讀 USB，不完整複製 combined 檔案。原本 USB 匯入入口仍保有256MiB每檔上限，不能匯入真實大型pair；請使用新計算入口。USB provider 若不支援 seek，回報 NOT_SEEKABLE，不增加寫入權限或改用全檔複製。
 
@@ -36,11 +49,17 @@ IDX 必須為536870912 bytes，IDs非空且四byte對齊。little-endian IDX每�
 
 K13、step2，同時比較中心 REF／ALT 及反向互補；背景位置不雙算，posting重複不雙算。每方向的匹配位置數大於58才支持分類。完整read ID（含R1/R2來源bit）在兩方向合併後只計一次，R1與R2不宣稱已合併成獨立fragment。REF／ALT支持較高者歸類，平手且非零為ambiguous；皆零為coverage-only。total=REF+ALT+ambiguous+coverageOnly。
 
-posting桶大於65536則跳過並回報skippedBuckets，不補造支持數。候選read上限100萬，超限報 RESOURCE_LIMIT，禁止截斷後成功。稀疏表最多約48MiB，rehash時約72MiB，另有批次buffer與UI結果。這是設計上限，不是Pixel量測值。
+聊天室對A/C/G/T四種中心與反向互補使用共同read表，背景coverage只累計一次；同一read／位置／方向去重。coverage>58方向的唯一最大正支持決定鹼基，正支持並列為ambiguous，皆零為coverageOnly。total=sum(baseCounts)+ambiguous+coverageOnly，effectiveDepth=sum(baseCounts)。外部alleles排序為REF在前，其餘依A/C/G/T，posterior按i<=j列出10組。
+
+posting桶大於65536則跳過並回報skippedBuckets，不補造支持數。候選read上限100萬，超限報 RESOURCE_LIMIT，禁止截斷後成功。共同四等位稀疏表最多約72MiB，rehash時約108MiB；legacy二等位表48MiB／72MiB，另有批次buffer與UI結果。這是設計上限，不是Pixel量測值。
 
 與demo差異：修正獨立read去重／尾端漏計風險、不累加同一read的兩方向depth、不補造被跳過桶的coverage、不使用dense10GiB陣列；因此不宣稱輸出与原始demo逐位相同。以人工fixture驗證，不以demo的疑似錯誤作真值。
 
 ## 研究模型
+
+聊天室版本dm-locus-research-v1，calibrated=false。對A/C/G/T計數枚舉10種二倍體候選；每鹼基dosage d為0、0.5或1，mu=d*(1-epsilon)+(1-d)*epsilon/3，concentration=1/rho-1，alpha=mu*concentration。以Dirichlet-multinomial log likelihood加prior，log-sum-exp正規化，選最大後驗。預設epsilon=.01、rho=.02、10個prior各.1、minDepth10、minPosterior.99。零／低深度、最佳兩候選log score差<=1e-12或posterior不足門檻均no-call；保留bestGenotype、bestPosterior、logScoreGap與全部posterior，不用其他ALT當fallback。這些是未校準研究假設，沒有BQ／MQ，不是GATK、不能視為真實GT機率或臨床結果。
+
+以下是保留的進階／legacy二等位模型：
 
 版本bb-research-v1，calibrated=false。有效深度n=REF+ALT，不包含ambiguous／coverage-only。各基因型 ALT 比例均值為epsilon、0.5、1-epsilon；concentration=1/rho-1；alpha=mu*concentration，beta=(1-mu)*concentration。計算beta-binomial likelihood加prior，用log-sum-exp正規化posterior。
 
@@ -54,9 +73,11 @@ GT輸出0/0、0/1、1/1；零深度、低深度、最高posterior低於門檻或
 
 - 原版Git備份：457fba7，遠端分支codex/backup-before-mobile-snp-20260930。
 - debug／set修改前Git備份：c1c038e3cf788a304a0677031edb9e420fc7a9e0，遠端分支codex/backup-before-snp-debug-20260930，已核對遠端SHA。
+- 聊天室／joint修改前Git備份：8f0ef03a3fcc3ea7506aa27e860492bafabed701，遠端分支codex/backup-before-locus-chat-20260930，限定23個相關檔案且遠端SHA已核對。
 - Native tests：snp_engine_test.c涵蓋跨4GiB／40bit、去重、58/59邊界、取消、錯誤及上限；genotype_model_test.c涵蓋獨立機率參考與數值邊界；snp_pipeline_test.c人工42 reads fixture含20REF／20ALT／1ambiguous／1coverage-only，驗證模型depth40及0/1。
 - Native以C99、warnings-as-errors及UndefinedBehaviorSanitizer驗證。Apple本機AddressSanitizer在main前初始化卡住，未取得ASan驗證通過。
-- 本次Flutter完整58測試通過，flutter analyze無問題，涵蓋酒精143筆流程、debug顯示／剪貼簿、取消與stale抑制；完整流程fake platform測試禁止HTTP，並非實機USB結果。Android SNP15項與USB10項通過。Android完整suite先前有既有BlueMagpie ModelManifestParserTest權重大小不一致，未改動該模組，不能稱完整Android suite全綠。
+- 本次Flutter完整70測試通過，flutter analyze無問題，涵蓋聊天室77位點與legacy143筆流程、精確API JSON、debug／剪貼簿、取消／拔除／登出及stale抑制；聊天室fake platform測試禁止HTTP／聊天持久化，並非實機USB結果。Android SNP17項與USB10項通過。Android完整suite先前有既有BlueMagpie ModelManifestParserTest權重大小不一致，未改動該模組，不能稱完整Android suite全綠。
 - JVM host harness呼叫真正JNI bridge、C計數與C模型，驗證跨4GiB人工fixture、JSON欄位、ZERO_DEPTH、0/1、取消100次、Java callback例外及caller FD仍有效。此harness不是Android實機測試；Mac JVM不能載入UBSan dylib，因此JNI測試使用一般warnings-as-errors建置，C測試另以UBSan驗證。
-- 2026-09-30 ARM64 debug APK已建置，以adb install -r成功更新到Pixel 10 Pro並啟動，保留原有App資料。真實USB seek、取消／拔除、記憶體、耗時與結果對照仍待驗收；不得把安裝成功或設計fixture當真實患者運算驗證。
-- 尚未新增LLM傳輸；結果只在本機頁面顯示。不能宣稱整條到LLM的實機流程完成。
+- 新增snp_locus_test.c驗證四等位共同去重、partition、雙方向、40bit／超4GiB、58/59邊界、取消與上限；locus_genotype_model_test.c以獨立long double計算核對10候選posterior、全部GT含C/G、低深度／並列／參數錯誤。JNI新增joint77列、debug on/off結果一致、caller FD所有權與逐位點分解驗證。上述均為人工fixture。
+- 2026-09-30聊天室joint版ARM64 debug APK已建置於build/app/outputs/flutter-apk/app-debug.apk；目前adb devices無Pixel連線，**新版未安裝**。當日前一個set／debug版曾以install -r成功安裝至Pixel 10 Pro，不代表本次聊天室版已安裝。真實USB seek、取消／拔除、記憶體、耗時與結果對照仍待驗收，tasks3.3保持未勾選；不得把建置／安裝或設計fixture當真實患者运算驗證。
+- 尚未新增LLM傳輸；結果與可用JSON只在本機聊天室顯示。不能宣稱整條到LLM的實機流程完成。
