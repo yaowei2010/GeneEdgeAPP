@@ -5,6 +5,65 @@ import 'snp_compute.dart';
 import 'snp_api_payload.dart';
 import 'snp_sets.dart';
 
+/// Compact source controls inside the original chat message list.
+class SnpChatSourceCard extends StatelessWidget {
+  const SnpChatSourceCard(
+      {super.key,
+      required this.controller,
+      required this.set,
+      required this.queries,
+      required this.error});
+  final SnpComputeController controller;
+  final SnpSet set;
+  final List<SnpQuery>? queries;
+  final String? error;
+  @override
+  Widget build(BuildContext context) => Card(
+          child: ExpansionTile(
+        title: const Text('USB・手機 C'),
+        subtitle: Text(!set.available
+            ? '尚未提供 SNP set，請切換健康主題'
+            : error ??
+                (queries == null
+                    ? '正在載入 SNP set…'
+                    : controller.selectedSourceId == null
+                        ? '請授權 USB 或選取資料夾'
+                        : '${set.label} · ${SnpLocus.group(queries!).length} 位點 · 送出訊息即計算')),
+        children: [
+          SnpChatControls(
+              controller: controller, set: set, queries: queries, error: error)
+        ],
+      ));
+}
+
+class SnpChatJobCard extends StatelessWidget {
+  const SnpChatJobCard({super.key, required this.controller});
+  final SnpComputeController controller;
+  @override
+  Widget build(BuildContext context) => Card(
+      child: Padding(
+          padding: const EdgeInsets.all(12),
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('USB・手機 C 計算回覆'),
+            if (controller.busy) ...[
+              Text('C 運算中：${controller.completed}／${controller.total} 位點'),
+              LinearProgressIndicator(
+                  value: controller.total == 0
+                      ? 0
+                      : controller.completed / controller.total),
+              TextButton.icon(
+                  onPressed: controller.cancel,
+                  icon: const Icon(Icons.stop),
+                  label: const Text('取消離線計算')),
+            ] else
+              Text(
+                  '計算未完成：${controller.errorCode ?? controller.status}；未送至 API。'),
+            if (controller.elapsedMs != null)
+              Text('中斷前耗時：${controller.elapsedMs!.toStringAsFixed(3)} ms'),
+          ])));
+}
+
 class SnpChatControls extends StatelessWidget {
   const SnpChatControls(
       {super.key,
@@ -91,17 +150,6 @@ class SnpChatControls extends StatelessWidget {
                 onChanged: controller.busy ? null : controller.setDebugEnabled),
             const Text('結果含敏感基因資訊；複製會寫入剪貼簿，Debug 也會輸出摘要至 logcat。',
                 style: TextStyle(fontSize: 12)),
-            if (controller.busy) ...[
-              Text('C 運算中：${controller.completed}／${controller.total} 位點'),
-              LinearProgressIndicator(
-                  value: controller.total == 0
-                      ? 0
-                      : controller.completed / controller.total),
-              TextButton.icon(
-                  onPressed: controller.cancel,
-                  icon: const Icon(Icons.stop),
-                  label: const Text('取消離線計算')),
-            ],
             if (controller.errorCode != null)
               Text('離線狀態：${controller.status}（${controller.errorCode}）'),
             if (controller.elapsedMs != null)
@@ -147,7 +195,7 @@ class SnpChatResultCard extends StatelessWidget {
             padding: const EdgeInsets.all(12),
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(controller.resultContext!.query,
+              Text('USB・手機 C 計算結果',
                   style: Theme.of(context).textTheme.titleMedium),
               Text('完成 ${controller.completed}／${controller.total} 位點'),
               Text(

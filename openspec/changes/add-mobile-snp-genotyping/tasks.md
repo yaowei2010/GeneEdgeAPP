@@ -41,7 +41,7 @@
 
 ## 7. USB來源與原聊天室訊息流修正
 
-- [ ] 7.1 在介面程式修改前，將已安裝的聊天室joint版與本次相關規格限定檔案備份至遠端codex/分支；以commit清單及git ls-remote核對SHA，排除其他功能與個人資料，於文件記錄回復位置。
-- [ ] 7.2 依賴7.1，以test/snp_chat_panel_test.dart失敗測試實作 USB-source chat message flow／USB運算來源與原聊天訊息流 的送出路由：移除USB離線開關，從sources／volumes判斷USB、主題預載set、ready時送出runLoci，未授權／多來源未選／無set／載入中或錯誤明示禁用且無BLE／Local JSON／HTTP fallback；驗證busy與拔除guard，無USB時原聊天路徑不變。
-- [ ] 7.3 接續7.2，以聊天室widget失敗測試將USB狀態／授權／來源與debug改為可展開操作，保留原聊天泡泡與composer，在同一訊息流末端顯示最新暫存使用者泡泡及計算進度／取消／結果／API JSON卡片；驗證143參考→77/77、舊泡泡可見、顯式複製、debug分段時間、取消／拔除／登出清空匯出與stale抑制、禁止持久化／TTS／網路，不重寫C模型或serializer。
-- [ ] 7.4 接續7.3更新docs/mobile-snp-genotyping.md的USB送出流程與已安裝／實測狀態；執行全套Flutter test／analyze、native／JNI回歸、ARM64 build，記錄結果。提供Pixel測試步驟；僅在使用者要求安裝時執行install -r，無真實USB验收仍保持3.3未完成。
+- [x] 7.1 在介面程式修改前，將已安裝的聊天室joint版與本次相關規格限定檔案備份至遠端codex/分支；以commit清單及git ls-remote核對SHA，排除其他功能與個人資料，於文件記錄回復位置。
+- [x] 7.2 依賴7.1，以test/snp_chat_panel_test.dart失敗測試實作 USB-source chat message flow／USB運算來源與原聊天訊息流 的送出路由：移除USB離線開關，從sources／volumes判斷USB、主題預載set、ready時送出runLoci，未授權／多來源未選／無set／載入中或錯誤明示禁用且無BLE／Local JSON／HTTP fallback；驗證busy與拔除guard，無USB時原聊天路徑不變。
+- [x] 7.3 接續7.2，以聊天室widget失敗測試將USB狀態／授權／來源與debug改為可展開操作，保留原聊天泡泡與composer，在同一訊息流末端顯示最新暫存使用者泡泡及計算進度／取消／結果／API JSON卡片；驗證143參考→77/77、舊泡泡可見、顯式複製、debug分段時間、取消／拔除／登出清空匯出與stale抑制、禁止持久化／TTS／網路，不重寫C模型或serializer。
+- [x] 7.4 接續7.3更新docs/mobile-snp-genotyping.md的USB送出流程與已安裝／實測狀態；執行全套Flutter test／analyze、native／JNI回歸、ARM64 build，記錄結果。提供Pixel測試步驟；僅在使用者要求安裝時執行install -r，無真實USB验收仍保持3.3未完成。

@@ -47,7 +47,11 @@ class _ChatRoomPageState extends State<ChatRoomPage>
   late final SnpComputeController _snp;
   ChatController? _chat;
   ChatTopic? _snpTopic;
-  bool _offline = false;
+  bool _usbAttached = false;
+  ChatMessage? _usbMessage;
+  bool get _usesUsb =>
+      _snp.supported &&
+      (_snp.sources.isNotEmpty || _snp.volumes.isNotEmpty || _snp.busy);
   List<SnpQuery>? _snpQueries;
   String? _snpError;
   int _loadGeneration = 0;
@@ -62,7 +66,17 @@ class _ChatRoomPageState extends State<ChatRoomPage>
       _snpQueries != null &&
       _snp.selectedSourceId != null;
   void _snpChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    final attached = _usesUsb;
+    if (attached != _usbAttached) {
+      _usbAttached = attached;
+      _loadGeneration++;
+      _snpQueries = null;
+      _snpError = null;
+      if (attached) unawaited(_loadSnpSet());
+    }
+    if (_snp.status == 'idle' && _snp.total == 0) _usbMessage = null;
+    setState(() {});
   }
 
   @override
@@ -86,7 +100,8 @@ class _ChatRoomPageState extends State<ChatRoomPage>
     } else {
       _snp.clearResults();
     }
-    if (_offline) unawaited(_loadSnpSet());
+    _usbMessage = null;
+    if (_usesUsb) unawaited(_loadSnpSet());
   }
 
   Future<void> _loadSnpSet() async {
@@ -99,30 +114,28 @@ class _ChatRoomPageState extends State<ChatRoomPage>
     try {
       final queries = await (widget.snpSetLoader?.call(set) ?? set.load());
       SnpLocus.group(queries);
-      if (mounted && generation == _loadGeneration && _offline) {
+      if (mounted && generation == _loadGeneration && _usesUsb) {
         setState(() => _snpQueries = queries);
       }
     } catch (e) {
-      if (mounted && generation == _loadGeneration && _offline) {
+      if (mounted && generation == _loadGeneration && _usesUsb) {
         setState(() => _snpError = 'SNP set 載入失敗：$e');
       }
     }
-  }
-
-  void _setOffline(bool value) {
-    if (_snp.busy) return;
-    _loadGeneration++;
-    _snp.clearResults();
-    setState(() => _offline = value);
-    if (value) unawaited(_loadSnpSet());
   }
 
   Future<void> _send() async {
     final text = _textCtrl.text.trim();
     if (text.isEmpty) return;
     final chat = context.read<ChatController>();
-    if (_offline) {
+    if (_snp.busy) return;
+    if (_usesUsb) {
       if (!_canOfflineSend) return;
+      setState(() => _usbMessage = ChatMessage(
+          id: 'usb-message',
+          role: Role.user,
+          content: text,
+          createdAt: DateTime.now()));
       try {
         await _snp.runLoci(_snpQueries!,
             input: _snpSet.identity,
@@ -453,7 +466,7 @@ class _ChatRoomPageState extends State<ChatRoomPage>
   @override
   Widget build(BuildContext context) {
     final c = context.watch<ChatController>();
-    if (!_offline) _scrollToBottom();
+    _scrollToBottom();
 
     final visible = c.messages.where((m) {
       if (m.role == Role.system) return false;
@@ -514,6 +527,8 @@ class _ChatRoomPageState extends State<ChatRoomPage>
             ? null
             : () {
                 Navigator.of(context).pop();
+                _loadGeneration++;
+                setState(() => _usbMessage = null);
                 if (_snp.busy) {
                   unawaited(_snp.cancel());
                 } else {
@@ -566,49 +581,43 @@ class _ChatRoomPageState extends State<ChatRoomPage>
                     },
                     onOpenTopicPicker: _openTopicPicker,
                     onOpenBlePicker: _openBlePicker,
-                    offline: _offline,
+                    offline: _usesUsb,
                   )),
-              if (_snp.supported)
-                SwitchListTile(
-                    dense: true,
-                    title: const Text('USB 離線 SNP'),
-                    subtitle: Text(
-                        _offline ? '送出只做 C 計算及產生 JSON，不使用 AI API' : '一般聊天室模式'),
-                    value: _offline,
-                    onChanged: _snp.busy ? null : _setOffline),
               Expanded(
-                child: _offline
-                    ? ListView(
+                child: visible.isEmpty && !_usesUsb && _usbMessage == null
+                    ? _EmptyConversation(
+                        item: _topicPresentation(c.topic),
+                        onChooseTopic: _openTopicPicker,
+                      )
+                    : ListView(
                         controller: _scrollCtrl,
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        keyboardDismissBehavior:
+                            ScrollViewKeyboardDismissBehavior.onDrag,
+                        padding: const EdgeInsets.symmetric(vertical: 10),
                         children: [
-                            SnpChatControls(
+                          if (_usesUsb)
+                            SnpChatSourceCard(
                                 controller: _snp,
                                 set: _snpSet,
                                 queries: _snpQueries,
                                 error: _snpError),
+                          for (final message in visible) _Bubble(msg: message),
+                          if (_usbMessage != null) ...[
+                            _Bubble(msg: _usbMessage!),
                             if (_snp.status == 'completed' &&
                                 _snp.locusResults.isNotEmpty)
-                              SnpChatResultCard(controller: _snp),
-                          ])
-                    : visible.isEmpty
-                        ? _EmptyConversation(
-                            item: _topicPresentation(c.topic),
-                            onChooseTopic: _openTopicPicker,
-                          )
-                        : ListView.builder(
-                            controller: _scrollCtrl,
-                            keyboardDismissBehavior:
-                                ScrollViewKeyboardDismissBehavior.onDrag,
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                            itemCount: visible.length,
-                            itemBuilder: (_, i) => _Bubble(msg: visible[i]),
-                          ),
+                              SnpChatResultCard(controller: _snp)
+                            else
+                              SnpChatJobCard(controller: _snp),
+                          ],
+                        ],
+                      ),
               ),
               _Composer(
                 controller: _textCtrl,
                 isListening: _isListening,
-                onSend: _offline && !_canOfflineSend ? null : _send,
+                onSend:
+                    _snp.busy || (_usesUsb && !_canOfflineSend) ? null : _send,
                 onMic: _toggleVoiceInput,
                 onMicStart: _startVoiceInput,
                 onMicEnd: _stopVoiceInput,

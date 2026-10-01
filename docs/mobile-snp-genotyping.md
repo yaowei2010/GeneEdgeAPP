@@ -4,12 +4,12 @@
 
 ## 操作
 
-1. 插入 USB，在原本聊天室選「酒精」主題，開啟「USB 離線 SNP」。不需進入獨立頁或先完成舊「USB / Gene dongle」匯入；插入不會自動計算。
-2. 首次授予 USB 資料夾唯讀權限。來源必須是掛載的 removable 儲存 UUID，拒絕手機 primary 儲存。選定含精確檔名 combined_idx_all.txt 與 combined_ids_all.txt 的同目錄雙檔；多組時自行選擇。
-3. 主題帶入「酒精代謝」內建參考set，確認143筆參考／77位點及版本alcohol-set143-k150-v1。其他主題尚未提供set時離線送出不可用，但一般聊天仍可用；載入失敗或尚未選USB也不可開始。
-4. 若要檢查耗時，先啟用「Debug：結果與分段計時」（預設關閉）。在聊天輸入框輸入問題並送出，會帶入當下文字／主題／set／來源快照執行C，進度到77/77。工作中鎖定主題／模式／debug，可取消。
-5. 完成卡片包含每位點唯一GT或no-call、四類計數、10候選posterior，以及debug啟用時的分段時間。展開API JSON或按「複製 API JSON」；debug關閉仍可取得API JSON。複製是顯式操作，基因資訊會進剪貼簿。
-6. 取消、拔除、變更來源／主題／模式、登出會清除暫存結果及可複製JSON，晚到事件不可還原。離線文字／結果不寫進聊天歷史、不自動TTS／HTTP／LLM。取消／失敗只顯示已量測elapsedMs，不宣稱完成。
+1. 插入 USB，在原本聊天室選「酒精」主題。系統顯示「USB・手機 C」，不需要USB離線模式開關、不切換聊天畫面、不需完成舊匯入；插入本身不開始計算。
+2. 展開「USB・手機 C」可查看set與來源操作。首次授予資料夾唯讀權限；來源必須是掛載removable UUID，拒絕手機primary儲存。需同目錄精確雙檔combined_idx_all.txt與combined_ids_all.txt；單一來源沿用自動選定，多組時自行選擇。
+3. 原主題自動帶入set，確認143筆參考／77位點、版本alcohol-set143-k150-v1。USB存在但未授權、多組未選、主題無set、載入未完成或失敗時送出不可用，不改走BLE／Local JSON／雲端。沒有USB時原本聊天路徑不變。
+4. 若需耗時，先在展開操作啟用「Debug：結果與分段計時」（預設關閉）。直接在原輸入框輸入問題並送出，以文字／主題／set／來源／debug快照執行C；訊息流顯示本次使用者泡泡及計算回覆，原聊天泡泡保留。進度到77/77，工作中锁定主題／來源／debug與重送，可取消。
+5. 同訊息流的完成卡片包含每位點唯一GT或no-call、四類計數、10候選posterior，以及debug啟用時的分段時間。展開API JSON或按「複製 API JSON」；debug關閉仍可取得JSON。複製是顯式操作，基因資訊會進剪貼簿。
+6. USB文字／結果是暫存UI，不寫聊天歷史、不自動TTS／HTTP／LLM；只保留最新USB工作的一組訊息，下一次送出替換。取消、拔除、變更來源／主題、登出使成功結果與匯出失效，晚到事件不可還原，失敗不自動改送網路。取消／失敗只顯示已量測elapsedMs，不宣稱完成。
 
 側欄「手機 SNP 運算」保留為進階／legacy工具，單SNP與外部FASTA仍支援301bp、最多3000筆及2MiB限制；該頁酒精set執行143筆獨立二等位查詢、進度143/143，不是聊天室77位點聯合判定。
 
@@ -35,7 +35,7 @@ totalMs从worker開始到結果結構建置完成，不含排程等待、Flutter
 
 ## Pixel／真實USB驗收
 
-1. 在聊天室開啟USB離線SNP、選酒精主題，確認77位點／143參考、版本及載入成功；授權並選定真實USBpair，不使用舊匯入入口。
+1. 在原聊天室選酒精主題、插入USB，確認顯示USB・手機C與77位點／143參考；必要時展開授權與來源選擇。不能有離線開關或換掉原訊息流，原聊天泡泡應仍可查看；不使用舊匯入入口。
 2. 開啟debug、輸入問題並送出，確認UI仍可取消；完成應77/77、77列與相同set版本。核對API三份列表一致、每rsID唯一、input77、used加no_call等於77；複製診斷核對各階段總和，no-call不等於讀取失敗。
 3. 關閉debug再跑，對照計數、posterior與GT完全一致；分段報告與新增基因結果日誌應不出現。重跑快取不同時不可直接把时间差歸因於演算法。
 4. 運算中按取消、另次運算中拔除USB，確認不出現完成結果／舊報告；重新接入後重新掃描與選來源。
@@ -74,10 +74,11 @@ GT輸出0/0、0/1、1/1；零深度、低深度、最高posterior低於門檻或
 - 原版Git備份：457fba7，遠端分支codex/backup-before-mobile-snp-20260930。
 - debug／set修改前Git備份：c1c038e3cf788a304a0677031edb9e420fc7a9e0，遠端分支codex/backup-before-snp-debug-20260930，已核對遠端SHA。
 - 聊天室／joint修改前Git備份：8f0ef03a3fcc3ea7506aa27e860492bafabed701，遠端分支codex/backup-before-locus-chat-20260930，限定23個相關檔案且遠端SHA已核對。
+- 原聊天室訊息流修正前Git備份：ce71eef62bd501a1bfa76ff588bb1c94f95fadcf，遠端分支codex/backup-before-usb-chat-flow-20261001，限定28個相關檔案且遠端SHA已核對，不含其他變更或USB個人資料。
 - Native tests：snp_engine_test.c涵蓋跨4GiB／40bit、去重、58/59邊界、取消、錯誤及上限；genotype_model_test.c涵蓋獨立機率參考與數值邊界；snp_pipeline_test.c人工42 reads fixture含20REF／20ALT／1ambiguous／1coverage-only，驗證模型depth40及0/1。
 - Native以C99、warnings-as-errors及UndefinedBehaviorSanitizer驗證。Apple本機AddressSanitizer在main前初始化卡住，未取得ASan驗證通過。
-- 本次Flutter完整70測試通過，flutter analyze無問題，涵蓋聊天室77位點與legacy143筆流程、精確API JSON、debug／剪貼簿、取消／拔除／登出及stale抑制；聊天室fake platform測試禁止HTTP／聊天持久化，並非實機USB結果。Android SNP17項與USB10項通過。Android完整suite先前有既有BlueMagpie ModelManifestParserTest權重大小不一致，未改動該模組，不能稱完整Android suite全綠。
+- 前次joint版Flutter70項、Android SNP17項與USB10項通過。2026-10-01介面修正版Flutter75項通過、flutter analyze無問題、native／JNI回歸通過；涵蓋原訊息流保留、插入不自動計算、送出77位點、未授權／多來源／載入錯誤阻擋、JSON／debug、取消／拔除／登出與stale抑制，禁止HTTP／聊天持久化，非實機USB結果。本次未改Android/C演算法；Android完整suite先前的BlueMagpie ModelManifestParserTest權重大小不一致未改動，不能稱完整Android suite全綠。
 - JVM host harness呼叫真正JNI bridge、C計數與C模型，驗證跨4GiB人工fixture、JSON欄位、ZERO_DEPTH、0/1、取消100次、Java callback例外及caller FD仍有效。此harness不是Android實機測試；Mac JVM不能載入UBSan dylib，因此JNI測試使用一般warnings-as-errors建置，C測試另以UBSan驗證。
 - 新增snp_locus_test.c驗證四等位共同去重、partition、雙方向、40bit／超4GiB、58/59邊界、取消與上限；locus_genotype_model_test.c以獨立long double計算核對10候選posterior、全部GT含C/G、低深度／並列／參數錯誤。JNI新增joint77列、debug on/off結果一致、caller FD所有權與逐位點分解驗證。上述均為人工fixture。
-- 2026-09-30聊天室joint版ARM64 debug APK已建置於build/app/outputs/flutter-apk/app-debug.apk；目前adb devices無Pixel連線，**新版未安裝**。當日前一個set／debug版曾以install -r成功安裝至Pixel 10 Pro，不代表本次聊天室版已安裝。真實USB seek、取消／拔除、記憶體、耗時與結果對照仍待驗收，tasks3.3保持未勾選；不得把建置／安裝或設計fixture當真實患者运算驗證。
+- 前次有離線開關的joint版已依使用者要求install -r成功安裝至Pixel 10 Pro並啟動。2026-10-01「原聊天室USB送出」修正版ARM64 debug APK已建置於build/app/outputs/flutter-apk/app-debug.apk，**本次修正版尚未安裝**，需使用者要求安裝。真實USB seek、取消／拔除、記憶體、耗時與結果對照仍待驗收，tasks3.3保持未勾選；不得把建置／安裝或人工fixture當真實基因資料正確性驗證。
 - 尚未新增LLM傳輸；結果與可用JSON只在本機聊天室顯示。不能宣稱整條到LLM的實機流程完成。
