@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geneapp/api_service.dart';
@@ -37,6 +38,102 @@ class NoHttp extends HttpOverrides {
 }
 
 void main() {
+  testWidgets(
+      'USB header tooltip and bounded top settings never start computation',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetViewInsets);
+    final p = ChatUsbPlatform();
+    p.sourceState = {
+      ...p.sourceState,
+      'sources': [
+        {'id': 'content://private/tree/usb1', 'label': 'USB / gene'}
+      ],
+      'selectedSourceId': 'content://private/tree/usb1'
+    };
+    final c = SnpComputeController(platform: p, supported: true);
+    final chat = ChatController(api: NoAi(), threadId: 'icon');
+    final queries = SnpSets.alcohol
+        .parse(File(SnpSets.alcohol.assetPath!).readAsBytesSync());
+    await tester.pumpWidget(MaterialApp(
+        home: ChangeNotifierProvider.value(
+            value: chat,
+            child: ChatRoomPage(
+                snpCompute: c, snpSetLoader: (_) => Future.value(queries)))));
+    await tester.pumpAndSettle();
+    final icon = find.byKey(const ValueKey('usb-source-icon'));
+    expect(icon, findsOneWidget);
+    expect(find.text('USB 已就緒'), findsOneWidget);
+    expect(find.text('Debug：結果與分段計時'), findsNothing);
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer();
+    await mouse.moveTo(tester.getCenter(icon));
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.textContaining('資料夾：USB / gene'), findsOneWidget);
+    expect(find.text('usb1'), findsNothing);
+    expect(find.textContaining('content://'), findsNothing);
+    await mouse.moveTo(Offset.zero);
+    await tester.pumpAndSettle();
+    await tester.longPress(icon);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('資料夾：USB / gene'), findsOneWidget);
+    await tester.tap(icon);
+    await tester.pumpAndSettle();
+    expect(find.byType(BottomSheet), findsNothing);
+    expect(
+        find.ancestor(of: icon, matching: find.byType(AppBar)), findsNothing);
+    expect(find.byKey(const ValueKey('usb-top-settings')), findsOneWidget);
+    await tester.tap(find.byTooltip('收合設定'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('usb-top-settings')), findsNothing);
+    await tester.tap(find.byTooltip('開啟設定'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('usb-top-settings')), findsOneWidget);
+    tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Debug：結果與分段計時'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(p.runCalls, 0);
+    await tester.longPress(icon);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('資料夾：USB / gene'), findsOneWidget);
+    p.sourceState = {
+      ...p.sourceState,
+      'revision': 2,
+      'selectedSourceId': null,
+      'sources': [
+        {'id': 'usb1', 'label': 'USB / one'},
+        {'id': 'usb2', 'label': 'USB / two'}
+      ]
+    };
+    await c.refresh();
+    await tester.pumpAndSettle();
+    expect(find.textContaining('資料夾：USB / gene'), findsNothing);
+    await tester.longPress(icon);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('USB 已偵測，請授權或選取資料夾'), findsOneWidget);
+    expect(find.textContaining('資料夾：USB /'), findsNothing);
+    p.sourceState = {
+      'revision': 3,
+      'sources': [],
+      'volumes': [],
+      'selectedSourceId': null
+    };
+    await c.refresh();
+    await tester.pumpAndSettle();
+    expect(icon, findsNothing);
+    expect(find.textContaining('USB 已偵測，請授權或選取資料夾'), findsNothing);
+    expect(p.runCalls, 0);
+    await tester.pumpWidget(const SizedBox());
+    c.dispose();
+    chat.dispose();
+    await p.stream.close();
+  });
   testWidgets(
       'chat sends alcohol set to offline C, presents 77 unique API rows and explicit clipboard without persistence',
       (tester) async {
@@ -74,25 +171,37 @@ void main() {
     expect(p.runCalls, 0);
     expect(find.text('USB 離線 SNP'), findsNothing);
     expect(find.text('上一則對話'), findsOneWidget);
-    await tester.tap(find.text('USB・手機 C'));
+    await tester.tap(find.byKey(const ValueKey('usb-source-icon')));
     await tester.pumpAndSettle();
     expect(find.textContaining('77 位點'), findsWidgets);
     expect(find.byType(SnpComputePage), findsNothing);
     await tester.ensureVisible(find.text('Debug：結果與分段計時'));
     await tester.tap(find.text('Debug：結果與分段計時'));
     await tester.pump();
+    expect(p.runCalls, 0);
     await tester.enterText(find.byType(TextField), '我能喝酒嗎');
     await tester.tap(find.byIcon(Icons.send));
     await tester.pumpAndSettle();
     expect(p.lastQueries.length, 143);
     expect(p.lastDebug, true);
+    expect(tester.widget<SwitchListTile>(find.byType(SwitchListTile)).onChanged,
+        isNull);
+    await tester.ensureVisible(find.text('USB 來源已選定'));
+    await tester.tap(find.text('USB 來源已選定'));
+    await tester.pumpAndSettle();
     expect(
         tester
-            .widget<AbsorbPointer>(find.byWidgetPredicate((w) =>
-                w is AbsorbPointer &&
-                w.child.runtimeType.toString() == '_ExperiencePanel'))
-            .absorbing,
-        true);
+            .widget<DropdownButtonFormField<String>>(
+                find.byType(DropdownButtonFormField<String>))
+            .onChanged,
+        isNull);
+    expect(
+        tester
+            .widget<TextButton>(find.ancestor(
+                of: find.text('重新掃描 USB'),
+                matching: find.byWidgetPredicate((w) => w is TextButton)))
+            .onPressed,
+        isNull);
     expect(chat.messages.map((m) => m.content), ['上一則對話']);
     expect(find.text('我能喝酒嗎'), findsOneWidget);
     expect(
@@ -293,6 +402,13 @@ void main() {
                               .readAsBytesSync()))))));
       await tester.pumpAndSettle();
       expect(find.text('USB 離線 SNP'), findsNothing);
+      if (readiness == 'permission') {
+        expect(find.textContaining('USB 待設定'), findsOneWidget);
+        await tester.tap(find.byKey(const ValueKey('usb-source-icon')));
+        await tester.pumpAndSettle();
+        expect(find.text('授權'), findsOneWidget);
+        expect(p.runCalls, 0);
+      }
       expect(
           tester
               .widget<IconButton>(find.widgetWithIcon(IconButton, Icons.send))
@@ -336,11 +452,11 @@ void main() {
               child: ChatRoomPage(
                   snpCompute: c, snpSetLoader: (_) => Future.value(queries)))));
       await tester.pumpAndSettle();
-      expect(find.text('USB・手機 C'), findsNothing);
+      expect(find.byKey(const ValueKey('usb-source-icon')), findsNothing);
       p.sourceState = {...ready, 'revision': 2};
       await c.refresh();
       await tester.pumpAndSettle();
-      expect(find.text('USB・手機 C'), findsOneWidget);
+      expect(find.byKey(const ValueKey('usb-source-icon')), findsOneWidget);
       expect(p.runCalls, 0);
       await tester.enterText(find.byType(TextField), '插入後才送出');
       await tester.tap(find.byIcon(Icons.send));

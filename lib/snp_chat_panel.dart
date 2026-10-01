@@ -5,11 +5,10 @@ import 'snp_compute.dart';
 import 'snp_api_payload.dart';
 import 'snp_sets.dart';
 
-/// Compact source controls inside the original chat message list.
-class SnpChatSourceCard extends StatelessWidget {
-  const SnpChatSourceCard(
-      {super.key,
-      required this.controller,
+/// Read-only header state; never substitutes a folder when none is selected.
+class SnpChatUsbStatus {
+  const SnpChatUsbStatus(
+      {required this.controller,
       required this.set,
       required this.queries,
       required this.error});
@@ -17,23 +16,34 @@ class SnpChatSourceCard extends StatelessWidget {
   final SnpSet set;
   final List<SnpQuery>? queries;
   final String? error;
-  @override
-  Widget build(BuildContext context) => Card(
-          child: ExpansionTile(
-        title: const Text('USB・手機 C'),
-        subtitle: Text(!set.available
-            ? '尚未提供 SNP set，請切換健康主題'
-            : error ??
-                (queries == null
-                    ? '正在載入 SNP set…'
-                    : controller.selectedSourceId == null
-                        ? '請授權 USB 或選取資料夾'
-                        : '${set.label} · ${SnpLocus.group(queries!).length} 位點 · 送出訊息即計算')),
-        children: [
-          SnpChatControls(
-              controller: controller, set: set, queries: queries, error: error)
-        ],
-      ));
+  String? get selectedLabel {
+    if (controller.selectedSourceId == null) return null;
+    for (final source in controller.sources) {
+      if (source['id'] == controller.selectedSourceId) {
+        return source['label'] as String;
+      }
+    }
+    return null;
+  }
+
+  bool get ready =>
+      selectedLabel != null &&
+      set.available &&
+      queries != null &&
+      error == null;
+  String get folderHint => selectedLabel == null
+      ? 'USB 已偵測，請授權或選取資料夾\n$status'
+      : 'USB・手機 C\n資料夾：$selectedLabel\n$status';
+  String get status => !set.available
+      ? 'USB 待設定：尚未提供 SNP set'
+      : error ??
+          (queries == null
+              ? 'USB 待設定：正在載入 SNP set…'
+              : !ready
+                  ? 'USB 待設定：請授權或選取資料夾'
+                  : controller.busy
+                      ? 'USB 計算中'
+                      : 'USB 已就緒');
 }
 
 class SnpChatJobCard extends StatelessWidget {

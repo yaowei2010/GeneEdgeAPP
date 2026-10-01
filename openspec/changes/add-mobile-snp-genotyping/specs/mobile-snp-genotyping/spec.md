@@ -2,6 +2,40 @@
 
 The independent query-page and 143-query requirements below SHALL remain the legacy/advanced workflow. The added chat workflow SHALL use the separate joint-locus mode defined below, with 77 locus results derived from the unchanged 143-record reference panel. Legacy per-query results SHALL NOT substitute for joint-locus evidence or API export. The USB-source chat message flow requirement added on 2026-10-01 SHALL supersede the previously implemented explicit USB-offline switch and replacement chat body; its pre-LLM boundary and ephemeral-result restrictions SHALL remain unchanged.
 
+The dismissible insertion confirmation below SHALL take precedence over the earlier icon-tap behavior: tapping the USB icon SHALL reopen confirmation, while the existing settings arrow SHALL continue to expand the upper settings panel. Source metadata persistence SHALL be distinct from the prohibition on persisting genetic results.
+
+### Requirement: USB root authorization and source restoration
+Android SHALL reuse valid persisted read-only SAF grants for mounted removable USB volumes and SHALL default a new authorization picker to the selected USB volume root using its UUID root document URI on supported versions. Initial location SHALL NOT grant permission or confirm the system picker. The UI SHALL identify the actual authorized scope, including existing subfolder-only grants, and SHALL expose a root-authorization action. Provider restrictions SHALL be surfaced without requesting write or all-files access, selecting primary storage, or claiming unauthorized root access. Source discovery SHALL scan only authorized mounted trees with the existing depth-16 and 10000-entry bounds and cancellation checks. It SHALL retain a valid current pair, otherwise restore the same volume's explicitly chosen pair only if still discovered and authorized, otherwise select a single valid pair. Multiple pairs without a valid remembered choice SHALL remain unselected. Only source-selection metadata SHALL be persisted privately; genetic data, reads, results and API payloads SHALL NOT be persisted by this feature.
+
+#### Scenario: Remembered source restored
+- **WHEN** the same authorized USB is reinserted and its remembered pair remains discoverable
+- **THEN** the pair SHALL be restored without another system picker; a missing or revoked source SHALL NOT be restored from metadata alone.
+
+##### Example: Multiple pairs and a remembered choice
+- **GIVEN** USB UUID ABCD-1234 has authorized pairs gene1 and gene2 and the stored explicit choice is gene2
+- **WHEN** discovery runs after reinsertion
+- **THEN** gene2 SHALL be selected; if gene2 disappears and gene1 plus gene3 remain, selection SHALL be empty rather than guessing.
+
+#### Scenario: Root initial location requires user grant
+- **WHEN** the user requests authorization for mounted USB UUID ABCD-1234
+- **THEN** the picker SHALL target document ID ABCD-1234: at the USB root and require user confirmation; cancellation SHALL leave authorization unchanged and SHALL NOT start computation.
+
+### Requirement: Dismissible USB insertion confirmation
+The chat room SHALL automatically display one dismissible confirmation dialog for newly mounted USB volume identities, including a USB already present at first entry. Close, cancel, Android back and outside taps SHALL dismiss it without starting C, HTTP or a system picker. Repeated refreshes, panel loading and returning from the permission picker SHALL NOT reopen a dismissed dialog for the same attachment. Tapping the USB icon SHALL reopen it; the settings arrow SHALL retain upper-panel controls. The dialog SHALL present readable USB/source labels, root-scope defaults and actual authorization scope, explicit volume/source choices when ambiguous, a user-initiated system authorization action and an explicit use-source confirmation. Chat submission SHALL require a confirmed current authorized source and ready set; dismissal SHALL block submission without cloud/BLE fallback while USB remains present. Source changes, removal and logout SHALL invalidate confirmation; stale callbacks SHALL NOT restore it. Dialogs SHALL be bounded and scrollable with the keyboard open, SHALL be cleaned up on removal/disposal/logout, and SHALL NOT mutate sources during a busy job. Only a subsequent valid chat send SHALL run the unchanged C locus workflow.
+
+#### Scenario: Dismiss and reopen
+- **WHEN** the user closes insertion confirmation and discovery refreshes
+- **THEN** no dialog SHALL automatically reopen, no job SHALL run, and the USB icon SHALL remain available for reopening confirmation.
+
+##### Example: Confirm before computation
+- **GIVEN** mounted authorized USB usb1 with readable folder USB / gene and the ready alcohol set
+- **WHEN** the user dismisses the initial dialog, reopens it from the icon and confirms that source
+- **THEN** runCalls SHALL remain zero until the user sends chat text, at which point C SHALL receive 143 references for 77 grouped loci.
+
+#### Scenario: Removal during confirmation
+- **WHEN** USB is removed while confirmation or authorization is pending
+- **THEN** the dialog SHALL close, selection and confirmation SHALL become invalid, and a late permission callback SHALL NOT confirm the removed attachment or start computation.
+
 ### Requirement: Direct USB source access
 The Android app SHALL read combined_idx_all.txt and combined_ids_all.txt directly and read-only from the same authorized mounted removable USB folder, without full-file copying or selecting primary phone storage. It SHALL validate file sizes and 64-bit seek support and require explicit selection when multiple pairs exist.
 

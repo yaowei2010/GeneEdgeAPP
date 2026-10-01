@@ -48,6 +48,13 @@
 
 ## 8. USB偵測圖示與資料夾提示
 
-- [ ] 8.1 在icon介面修改前，將目前已安裝的原訊息流版及相關追加規格限定檔案備份到遠端codex/分支，核對commit檔案清單及git ls-remote SHA；排除其他功能／個人USB資料，於文件記錄回復點。
-- [ ] 8.2 依賴8.1，以test/snp_chat_panel_test.dart失敗測試實作 USB detection icon and folder tooltip／USB偵測圖示與資料夾提示：既有上方下拉設定標頭的偵測icon、ready／待設定文字、hover與long-press Tooltip對應sources.label、不洩漏sourceId／URI；點擊icon或設定按鈕展開同一下拉區的授權／來源／debug內容，限制可捲動高度且鍵盤開啟不overflow，不另設AppBar／bottom sheet入口，移除常駐訊息流設定卡片。驗證多組未選不猜、拔除清除icon／tooltip、busy禁用設定、舊泡泡仍在且插入／hover／展開皆不run，送出才C計算77位點，取消與stale無回退HTTP。
-- [ ] 8.3 接續8.2更新docs/mobile-snp-genotyping.md的icon／hover／手機長按／點擊設定操作；執行Flutter全套test／analyze與ARM64 build並記錄結果及未安裝狀態。只在使用者要求時install -r；真實USB結果與效能驗收3.3仍須獨立執行。
+- [x] 8.1 在icon介面修改前，將目前已安裝的原訊息流版及相關追加規格限定檔案備份到遠端codex/分支，核對commit檔案清單及git ls-remote SHA；排除其他功能／個人USB資料，於文件記錄回復點。
+- [x] 8.2 依賴8.1，以test/snp_chat_panel_test.dart失敗測試實作 USB detection icon and folder tooltip／USB偵測圖示與資料夾提示：既有上方下拉設定標頭的偵測icon、ready／待設定文字、hover與long-press Tooltip對應sources.label、不洩漏sourceId／URI；點擊icon或設定按鈕展開同一下拉區的授權／來源／debug內容，限制可捲動高度且鍵盤開啟不overflow，不另設AppBar／bottom sheet入口，移除常駐訊息流設定卡片。驗證多組未選不猜、拔除清除icon／tooltip、busy禁用設定、舊泡泡仍在且插入／hover／展開皆不run，送出才C計算77位點，取消與stale無回退HTTP。
+- [x] 8.3 接續8.2更新docs/mobile-snp-genotyping.md的icon／hover／手機長按／點擊設定操作；執行Flutter全套test／analyze與ARM64 build並記錄結果及未安裝狀態。只在使用者要求時install -r；真實USB結果與效能驗收3.3仍須獨立執行。
+
+## 9. USB插入確認與根目錄授權恢復
+
+- [ ] 9.1 在本組程式修改前，將已安裝USB圖示版的相關五個dirty檔與本次四份規格限定Git備份到遠端codex/分支，核對commit檔案清單與git ls-remote SHA，排除其他功能／USB個人資料，記錄可回復SHA。
+- [ ] 9.2 依賴9.1，以Android失敗測試實作 USB root authorization and source restoration／USB插入確認與根目錄授權恢復 的原生部分：mounted removable UUID根目錄initial URI、首次顯式系統授權／保存唯讀grant、舊子目錄範圍明示、discover保留當前／恢復同卷有效metadata／唯一pair自動選／多组未選不猜；只保存來源metadata，撤權／來源消失／primary拒絕，掃描深度16／10000項及取消保持。於SnpContractsTest.kt與相關Android tests驗證恢復策略、root定位與失效，保留舊USB回歸。
+- [ ] 9.3 接續9.2，以Flutter controller／test/snp_chat_panel_test.dart失敗測試實作 Dismissible USB insertion confirmation：每次掛載UUID或首次已掛載自動一個可關閉AlertDialog，返回／點外部／取消不確認、不反覆彈出、不run／HTTP，USB圖示可重開、設定箭頭仍展開上方區；已有grant沿用、未授權按鈕開系統picker並展示實際範圍，多USB／多來源明確選擇，僅確認有效來源後才能聊天送出77位點。驗證refresh／授權返回去重、鍵盤無overflow、busy／logout／拔除／dispose及late清理，原泡泡、debug、JSON與no-fallback不變。
+- [ ] 9.4 接續9.3更新docs/mobile-snp-genotyping.md的確認／關閉／重開、根目錄與子目錄限制、授權與來源恢復操作、備份SHA；執行Flutter全套tests／analyze、Android SNP／USB tests及ARM64 build，記錄fake與實機狀態，不自動安裝。只有使用者要求時install -r；真實USB3.3未驗證仍未完成。

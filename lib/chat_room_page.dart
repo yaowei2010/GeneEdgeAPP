@@ -568,62 +568,76 @@ class _ChatRoomPageState extends State<ChatRoomPage>
               colors: [Color(0xFFEFF5FB), Color(0xFFF7FAFD)],
             ),
           ),
-          child: Column(
-            children: [
-              AbsorbPointer(
-                  absorbing: _snp.busy,
-                  child: _ExperiencePanel(
-                    controller: c,
-                    collapsed: _panelCollapsed,
-                    topicFor: _topicPresentation,
-                    onToggleCollapsed: () {
-                      setState(() => _panelCollapsed = !_panelCollapsed);
-                    },
-                    onOpenTopicPicker: _openTopicPicker,
-                    onOpenBlePicker: _openBlePicker,
-                    offline: _usesUsb,
-                  )),
-              Expanded(
-                child: visible.isEmpty && !_usesUsb && _usbMessage == null
-                    ? _EmptyConversation(
-                        item: _topicPresentation(c.topic),
-                        onChooseTopic: _openTopicPicker,
-                      )
-                    : ListView(
-                        controller: _scrollCtrl,
-                        keyboardDismissBehavior:
-                            ScrollViewKeyboardDismissBehavior.onDrag,
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        children: [
-                          if (_usesUsb)
-                            SnpChatSourceCard(
+          child: LayoutBuilder(
+              builder: (context, constraints) => Column(
+                    children: [
+                      _ExperiencePanel(
+                        controller: c,
+                        collapsed: _panelCollapsed,
+                        topicFor: _topicPresentation,
+                        onToggleCollapsed: () {
+                          setState(() => _panelCollapsed = !_panelCollapsed);
+                        },
+                        onOpenTopicPicker: _openTopicPicker,
+                        onOpenBlePicker: _openBlePicker,
+                        offline: _usesUsb,
+                        busy: _snp.busy,
+                        settingsHeight: constraints.maxHeight * 0.30,
+                        usb: _usesUsb
+                            ? SnpChatUsbStatus(
                                 controller: _snp,
                                 set: _snpSet,
                                 queries: _snpQueries,
-                                error: _snpError),
-                          for (final message in visible) _Bubble(msg: message),
-                          if (_usbMessage != null) ...[
-                            _Bubble(msg: _usbMessage!),
-                            if (_snp.status == 'completed' &&
-                                _snp.locusResults.isNotEmpty)
-                              SnpChatResultCard(controller: _snp)
-                            else
-                              SnpChatJobCard(controller: _snp),
-                          ],
-                        ],
+                                error: _snpError)
+                            : null,
+                        usbControls: _usesUsb
+                            ? SnpChatControls(
+                                controller: _snp,
+                                set: _snpSet,
+                                queries: _snpQueries,
+                                error: _snpError)
+                            : null,
                       ),
-              ),
-              _Composer(
-                controller: _textCtrl,
-                isListening: _isListening,
-                onSend:
-                    _snp.busy || (_usesUsb && !_canOfflineSend) ? null : _send,
-                onMic: _toggleVoiceInput,
-                onMicStart: _startVoiceInput,
-                onMicEnd: _stopVoiceInput,
-              )
-            ],
-          ),
+                      Expanded(
+                        child: visible.isEmpty &&
+                                !_usesUsb &&
+                                _usbMessage == null
+                            ? _EmptyConversation(
+                                item: _topicPresentation(c.topic),
+                                onChooseTopic: _openTopicPicker,
+                              )
+                            : ListView(
+                                controller: _scrollCtrl,
+                                keyboardDismissBehavior:
+                                    ScrollViewKeyboardDismissBehavior.onDrag,
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 10),
+                                children: [
+                                  for (final message in visible)
+                                    _Bubble(msg: message),
+                                  if (_usbMessage != null) ...[
+                                    _Bubble(msg: _usbMessage!),
+                                    if (_snp.status == 'completed' &&
+                                        _snp.locusResults.isNotEmpty)
+                                      SnpChatResultCard(controller: _snp)
+                                    else
+                                      SnpChatJobCard(controller: _snp),
+                                  ],
+                                ],
+                              ),
+                      ),
+                      _Composer(
+                        controller: _textCtrl,
+                        isListening: _isListening,
+                        onSend: _snp.busy || (_usesUsb && !_canOfflineSend)
+                            ? null
+                            : _send,
+                        onMic: _toggleVoiceInput,
+                        onMicStart: _startVoiceInput,
+                        onMicEnd: _stopVoiceInput,
+                      )
+                    ],
+                  )),
         ),
       ),
     );
@@ -703,6 +717,10 @@ class _TopicBadge extends StatelessWidget {
 
 class _ExperiencePanel extends StatelessWidget {
   final bool offline;
+  final bool busy;
+  final double settingsHeight;
+  final SnpChatUsbStatus? usb;
+  final Widget? usbControls;
   final ChatController controller;
   final bool collapsed;
   final TopicPresentation Function(ChatTopic topic) topicFor;
@@ -712,6 +730,10 @@ class _ExperiencePanel extends StatelessWidget {
 
   const _ExperiencePanel({
     this.offline = false,
+    this.busy = false,
+    required this.settingsHeight,
+    this.usb,
+    this.usbControls,
     required this.controller,
     required this.collapsed,
     required this.topicFor,
@@ -771,10 +793,12 @@ class _ExperiencePanel extends StatelessWidget {
                     const SizedBox(height: 3),
                     Text(
                       offline
-                          ? "USB 離線 SNP · API JSON 輸出"
+                          ? usb!.status
                           : controller.geneLlmEnabled
                               ? "AI 已就緒，輸入問題即可開始"
                               : "請開啟 GeneLLM 後開始詢問",
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontSize: 13,
                         color: Color(0xFF607889),
@@ -784,10 +808,23 @@ class _ExperiencePanel extends StatelessWidget {
                 ),
               ),
               TextButton.icon(
-                onPressed: onOpenTopicPicker,
+                onPressed: busy ? null : onOpenTopicPicker,
                 icon: const Icon(Icons.grid_view_rounded, size: 18),
                 label: const Text("切換"),
               ),
+              if (usb != null)
+                Tooltip(
+                  key: ValueKey(usb!.folderHint),
+                  message: usb!.folderHint,
+                  child: IconButton(
+                    key: const ValueKey('usb-source-icon'),
+                    visualDensity: VisualDensity.compact,
+                    icon: Icon(Icons.usb,
+                        color:
+                            usb!.ready ? Colors.teal : Colors.orange.shade800),
+                    onPressed: collapsed ? onToggleCollapsed : () {},
+                  ),
+                ),
               IconButton(
                 visualDensity: VisualDensity.compact,
                 icon: Icon(
@@ -803,12 +840,18 @@ class _ExperiencePanel extends StatelessWidget {
           AnimatedSize(
             duration: const Duration(milliseconds: 220),
             curve: Curves.easeInOut,
-            child: collapsed || offline
+            child: collapsed
                 ? const SizedBox.shrink()
-                : _OperationsPanel(
-                    controller: controller,
-                    onOpenBlePicker: onOpenBlePicker,
-                  ),
+                : ConstrainedBox(
+                    constraints: BoxConstraints(maxHeight: settingsHeight),
+                    child: SingleChildScrollView(
+                        key:
+                            offline ? const ValueKey('usb-top-settings') : null,
+                        child: usbControls ??
+                            _OperationsPanel(
+                              controller: controller,
+                              onOpenBlePicker: onOpenBlePicker,
+                            ))),
           ),
         ],
       ),

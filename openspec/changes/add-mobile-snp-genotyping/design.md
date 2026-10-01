@@ -13,6 +13,18 @@ Non-Goals：手機內部 combined 資料、複製完整 USB 資料、FASTQ 建�
 
 ## Decisions
 
+### USB插入確認與根目錄授權恢復
+
+此節為最新優先介面契約，追加可關閉的AlertDialog；USB圖示點擊改為重新開啟確認視窗，原設定箭頭仍展開上方來源／debug設定。初次進入聊天室已有掛載USB也視為一次插入，依掛載UUID集合辨識新裝置與拔除，重複refresh／set載入／系統授權返回不重複彈窗。對話框提供明確關閉／取消、Android返回及點外部關閉；同一次掛載關閉後不再自動彈出，重新插入才再顯示。多USB顯示可讀裝置選擇，不猜第一支；busy不開新的來源修改視窗，待idle後處理仍掛載的新裝置。拔除／logout／頁面dispose關閉相關視窗，post-frame與授權future使用掛載generation抑制晚到資料。視窗內容有界可捲動，鍵盤開啟不overflow。
+
+確認頁預設顯示「USB 根目錄」；已有有效唯讀tree權限先沿用其實際範圍，若舊權限僅限子資料夾須清楚標示，另提供根目錄授權按鈕，不把子目錄冒充根目錄。未授權或需要改根目錄時，`requestAccess(volumeId)`建立該mounted removable UUID的root document URI（document id為UUID加冒號），在可用Android版本透過EXTRA_INITIAL_URI定位到USB最外層；不得自動按下系統授權或宣稱自動取得權限。provider限制根目錄選取時顯示限制／實際選定範圍，允許使用者確認可存取子目錄，不改用MANAGE_EXTERNAL_STORAGE、寫入權限或primary手機來源。保留takePersistableUriPermission唯讀保存及重新掛載valid檢查；只掃描目前合法tree，沿用SnpSourceScanner深度16／10000項與取消限制，同目錄精確combined双檔，根目錄未找到則搜尋授權子目錄。
+
+原生discover先保留目前有效選擇，再恢復同UUID上次實際選定且仍在掃描結果內的pair，沒有有效紀錄時僅一組合法pair可自動選；多組無有效紀錄保持未選。將使用者明確選擇的來源metadata按UUID保存至專用私有preferences，不保存genotype、read、JSON或基因結果，不向UI／log顯示URI。紀錄不是權限來源，重新掃描、授權及掛載檢查每次都要通過；失效紀錄不得導向其他卷或手機。IPC原欄位保持相容，若需授權範圍metadata採可選欄位並驗證型別。
+
+聊天室另記住每次掛載的使用確認，與系統已保存權限區分。關閉或取消不確認，不清除既有系統授權；USB仍可見但聊天送出保持阻擋，不fallback網路。點「使用此 USB」時只確認仍掛載、已授權且選定的來源，不runLoci；無來源／掃描中／授權失效／多來源未選顯示對應狀態。確認後只有合法文字及set ready時送出C；來源改變／拔除／logout清除相應確認與舊輸出，主題切換保留同USB確認但重新驗證set。
+
+範圍內：插入／關閉／重開確認、root picker initial location、持久唯讀權限重用、來源metadata恢復、聊天室確認送出guard及測試。範圍外：自動代替系統授權、背景監控、自動C／LLM、個人combined複製、C模型與舊匯入重寫。採APP先確認再開系統picker，不在mount廣播強制開picker，避免使用者無法取消與重複彈出。
+
 ### USB偵測圖示與資料夾提示
 
 此項為最新優先介面契約，取代「USB運算來源與原聊天訊息流」已完成版本的訊息列表來源卡片；送出路由／77位點模型／API契約不變。依使用者追加位置要求，全部USB操作整合到聊天室既有上方下拉設定區（_ExperiencePanel／_OperationsPanel）。偵測到removable volumes或sources時，在該區標頭呈現Icons.usb，使收合時也能辨識；未偵測時不顯示。已選定來源且set就緒用就緒色；待授權／未選／set未就緒用待設定色，語意與tooltip文字不能只依顏色區分。
@@ -87,6 +99,7 @@ asset 載入顯示 loading／ready／error 與 set 名稱、版本、筆數，�
 
 ## Implementation Contract
 
+- USB插入確認最新驗收：`test/snp_chat_panel_test.dart`及controller tests先失敗驗證插入／首次已掛載僅一個可關閉AlertDialog、refresh與授權返回不重彈、關閉不確認／不run／不HTTP、圖示可重開、拔除／dispose／logout清理及late不復活；確認來源後才能原composer送出，仍143參考→77位點／JSON，主題set與busy guard不變。原設定箭頭／debug仍在上方，確認視窗不取代聊天室。Android `SnpContractsTest.kt`與相關tests驗證root initial URI、primary拒絕、保存唯讀權限、目前選擇／同UUID有效記錄／唯一pair／多組未選恢復順序、被撤權與移除來源不恢復、scanner範圍與資源上限不放寬。首次根目錄仍需系統確認，私有儲存只新增來源metadata，禁止保存基因結果；fake／fixture／真實PixelUSB分開記錄。
 - USB icon最新验收：`test/snp_chat_panel_test.dart`先定義無USB無icon、插入顯示icon、hover與long-press顯示選定label且不含sourceId／URI、展開上方下拉設定不啟動工作、多組未選不猜來源、拔除清除label／icon；保留原聊天泡泡，只有送出才計算77位點，busy禁用來源／debug、取消與stale guard不變。不得把偵測icon等同已授權就緒。
 - 2026-10-01優先介面驗收：移除USB離線模式開關，不以SnpChatControls取代聊天歷史；USB來源狀態與送出路由依上述「USB運算來源與原聊天訊息流」。`test/snp_chat_panel_test.dart`須驗證無需切模式、舊泡泡可見、輸入問題→C收到143參考→77/77→原訊息流有暫存文字／結果／JSON；禁止HTTP／持久化／TTS。另驗證未授權／多來源／無set／載入錯誤禁用、busy鎖定、取消與拔除不fallback、stale不復活、沒有USB時原sendUserMessage。模型與serializer既有tests維持通過。
 - 追加優先契約：聊天室使用上述聯合locus模式與API JSON。已完成獨立頁的143列二等位行為保留為進階／legacy模式；以下query契約與既有驗收不代表新locus功能已完成。API傳輸、自動持久化、BQ推造、臨床校準、舊USB匯入、TTS不在追加範圍。
