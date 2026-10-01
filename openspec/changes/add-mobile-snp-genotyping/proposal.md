@@ -8,6 +8,8 @@ GeneEdge 需要在手機離線查詢 USB gene dongle 並判定 SNP 基因型，�
 
 ## What Changes
 
+USB偵測圖示追加需求：全部整合到原本聊天室上方下拉設定區，插入時在該區標頭顯示USB icon，滑鼠hover或手機長按顯示目前選定資料夾的可讀名稱；展開既有下拉設定可授權／選來源／調整debug。用標頭圖示取代訊息流中佔位的USB來源卡片，不新增獨立AppBar設定按鈕或bottom sheet，聊天畫面保留。尚未授權或多組未選時顯示待設定狀態，不冒充運算就緒；插入／hover／展開設定不啟動SNP，只有送出聊天訊息才計算。
+
 2026-10-01介面修正（優先於下面已完成版本的獨立離線模式描述）：使用者要求類似原BLE／Auto的送出→運算→結果訊息流程，USB是資料來源、手機C是運算端，不切換聊天室畫面、不要求額外USB離線開關。插入後辨識USB與授權狀態，發送訊息時依目前主題set計算，文字／進度／結果與API JSON在原訊息流呈現。既有沒有USB時的聊天路徑保留；此修正仍停在產生API JSON，不新增自動LLM傳輸。
 
 - 移除聊天室USB離線開關及替換整個聊天body的計算畫面，保留既有聊天泡泡、主題選擇與輸入框；USB狀態／授權／來源選擇與debug採簡潔可展開操作。
@@ -49,3 +51,4 @@ GeneEdge 需要在手機離線查詢 USB gene dongle 並判定 SNP 基因型，�
 - Set 追加影響：新增 `assets/snp_sets/alcohol.set143.k150.fasta`、`lib/snp_sets.dart`、`test/snp_sets_test.dart`，修改 `pubspec.yaml`、`lib/snp_compute.dart`、`lib/snp_compute_page.dart` 及既有 SNP tests／操作文件；不將 USB combined 或任何個人 read 打包入 App。
 - 聊天室／聯合模型追加影響：新增C `locus_genotype_model.c/.h`、`test/native/locus_genotype_model_test.c`、`test/native/snp_locus_test.c`，Flutter `snp_api_payload.dart`、`snp_chat_panel.dart`及對應tests；修改既有SNP engine／bridge／plugin／contracts、CMake、`snp_sets.dart`、`snp_compute.dart`、`chat_room_page.dart`及驗證腳本。`api_service.dart`現有JSON契約只作相容性依據，不改URL或自動傳輸行為。
 - 介面修正影響：`lib/chat_room_page.dart`、`lib/snp_chat_panel.dart`、必要的`lib/snp_compute.dart`來源狀態介面、`test/snp_chat_panel_test.dart`及`docs/mobile-snp-genotyping.md`。不更動C模型／原生IDX格式／BLE演算法或AI URL。
+- USB icon追加影響同上述Flutter介面／tests／操作文件，沿用sources.label顯示選定資料夾，不新增原生路徑讀取或URI洩露。

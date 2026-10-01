@@ -13,6 +13,16 @@ Non-Goals：手機內部 combined 資料、複製完整 USB 資料、FASTQ 建�
 
 ## Decisions
 
+### USB偵測圖示與資料夾提示
+
+此項為最新優先介面契約，取代「USB運算來源與原聊天訊息流」已完成版本的訊息列表來源卡片；送出路由／77位點模型／API契約不變。依使用者追加位置要求，全部USB操作整合到聊天室既有上方下拉設定區（_ExperiencePanel／_OperationsPanel）。偵測到removable volumes或sources時，在該區標頭呈現Icons.usb，使收合時也能辨識；未偵測時不顯示。已選定來源且set就緒用就緒色；待授權／未選／set未就緒用待設定色，語意與tooltip文字不能只依顏色區分。
+
+使用Flutter Tooltip提供滑鼠hover與手機long-press提示。選定來源時由selectedSourceId對應sources.label取得可讀資料夾名，提示「USB・手機 C／資料夾：<label>」並附ready／set載入等狀態；不得以SAF URI／sourceId當資料夾名稱。沒有選定來源時提示「已偵測 USB，待授權或選取資料夾」，多組不能顯示任意第一組為已選來源。拔除或來源失效立即清除舊資料夾提示，確認無USB後移除icon。無USB時既有普通／BLE聊天不變。
+
+點擊icon或原設定展開按鈕展開既有上方下拉區，沿用SnpChatControls的唯讀授權、來源選擇、set資訊及debug；不新增bottom sheet或独立AppBar入口、不切換聊天模式或導頁，不在訊息流放常駐大型設定卡片。展開內容須限制高度且可捲動，避免手機或鍵盤開啟時overflow；持續反映controller狀態，運算中授權／來源／debug禁用；USB拔除後不顯示過期選定資料夾。插入、hover、long-press、展開設定均不呼叫runLoci／HTTP，只有原composer送出合法文字且USB ready時才執行C。保留同訊息流的暫存使用者泡泡、進度／取消／結果與JSON。
+
+範圍內：上方下拉設定的icon、tooltip、來源操作與widget驗證。範圍外：完整USB路徑解析、系統檔案管理器、原生模型／BLE／API改動、自動計算／自動上傳。選用tooltip而非觸碰才切模式，因為手機沒有hover、長按可提供相同資訊而不干擾聊天送出。
+
 ### USB運算來源與原聊天訊息流
 
 2026-10-01優先修正契約：下面「聊天室離線流程與API JSON」的明確離線開關／切換body是上一版實作記錄，不再是新介面驗收。保留普通聊天室ListView、歷史泡泡、主題與composer。USB是類似BLE／Auto的實際運算来源，非另開工具畫面；Auto在現有程式指BLE裝置自動選擇，本次不把它當成全新自動AI路由。
@@ -77,6 +87,7 @@ asset 載入顯示 loading／ready／error 與 set 名稱、版本、筆數，�
 
 ## Implementation Contract
 
+- USB icon最新验收：`test/snp_chat_panel_test.dart`先定義無USB無icon、插入顯示icon、hover與long-press顯示選定label且不含sourceId／URI、展開上方下拉設定不啟動工作、多組未選不猜來源、拔除清除label／icon；保留原聊天泡泡，只有送出才計算77位點，busy禁用來源／debug、取消與stale guard不變。不得把偵測icon等同已授權就緒。
 - 2026-10-01優先介面驗收：移除USB離線模式開關，不以SnpChatControls取代聊天歷史；USB來源狀態與送出路由依上述「USB運算來源與原聊天訊息流」。`test/snp_chat_panel_test.dart`須驗證無需切模式、舊泡泡可見、輸入問題→C收到143參考→77/77→原訊息流有暫存文字／結果／JSON；禁止HTTP／持久化／TTS。另驗證未授權／多來源／無set／載入錯誤禁用、busy鎖定、取消與拔除不fallback、stale不復活、沒有USB時原sendUserMessage。模型與serializer既有tests維持通過。
 - 追加優先契約：聊天室使用上述聯合locus模式與API JSON。已完成獨立頁的143列二等位行為保留為進階／legacy模式；以下query契約與既有驗收不代表新locus功能已完成。API傳輸、自動持久化、BQ推造、臨床校準、舊USB匯入、TTS不在追加範圍。
 - 追加驗收：C共同fixture核對四類去重、跨ALT/方向不增深度、ALT/ALT與無支持的鹼基、非法上下文；模型與独立高精度參考比對10候選posterior，驗證對稱／參數／no-call。Flutter fake聊天室測試選酒精→文字送出→77/77→唯一位點JSON、debug on/off結果相同、清空／取消／拔除stale guard，禁止HTTP；API payload tests精確核對askLlm欄位、REF=T/ALT=C轉TC、no-call排除及重複rsID拒絕。實機與fixture分開紀錄。

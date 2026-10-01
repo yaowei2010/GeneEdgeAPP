@@ -45,3 +45,9 @@
 - [x] 7.2 依賴7.1，以test/snp_chat_panel_test.dart失敗測試實作 USB-source chat message flow／USB運算來源與原聊天訊息流 的送出路由：移除USB離線開關，從sources／volumes判斷USB、主題預載set、ready時送出runLoci，未授權／多來源未選／無set／載入中或錯誤明示禁用且無BLE／Local JSON／HTTP fallback；驗證busy與拔除guard，無USB時原聊天路徑不變。
 - [x] 7.3 接續7.2，以聊天室widget失敗測試將USB狀態／授權／來源與debug改為可展開操作，保留原聊天泡泡與composer，在同一訊息流末端顯示最新暫存使用者泡泡及計算進度／取消／結果／API JSON卡片；驗證143參考→77/77、舊泡泡可見、顯式複製、debug分段時間、取消／拔除／登出清空匯出與stale抑制、禁止持久化／TTS／網路，不重寫C模型或serializer。
 - [x] 7.4 接續7.3更新docs/mobile-snp-genotyping.md的USB送出流程與已安裝／實測狀態；執行全套Flutter test／analyze、native／JNI回歸、ARM64 build，記錄結果。提供Pixel測試步驟；僅在使用者要求安裝時執行install -r，無真實USB验收仍保持3.3未完成。
+
+## 8. USB偵測圖示與資料夾提示
+
+- [ ] 8.1 在icon介面修改前，將目前已安裝的原訊息流版及相關追加規格限定檔案備份到遠端codex/分支，核對commit檔案清單及git ls-remote SHA；排除其他功能／個人USB資料，於文件記錄回復點。
+- [ ] 8.2 依賴8.1，以test/snp_chat_panel_test.dart失敗測試實作 USB detection icon and folder tooltip／USB偵測圖示與資料夾提示：既有上方下拉設定標頭的偵測icon、ready／待設定文字、hover與long-press Tooltip對應sources.label、不洩漏sourceId／URI；點擊icon或設定按鈕展開同一下拉區的授權／來源／debug內容，限制可捲動高度且鍵盤開啟不overflow，不另設AppBar／bottom sheet入口，移除常駐訊息流設定卡片。驗證多組未選不猜、拔除清除icon／tooltip、busy禁用設定、舊泡泡仍在且插入／hover／展開皆不run，送出才C計算77位點，取消與stale無回退HTTP。
+- [ ] 8.3 接續8.2更新docs/mobile-snp-genotyping.md的icon／hover／手機長按／點擊設定操作；執行Flutter全套test／analyze與ARM64 build並記錄結果及未安裝狀態。只在使用者要求時install -r；真實USB結果與效能驗收3.3仍須獨立執行。

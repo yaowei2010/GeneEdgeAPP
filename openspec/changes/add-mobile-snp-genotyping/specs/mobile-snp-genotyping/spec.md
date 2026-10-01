@@ -180,3 +180,21 @@ The chat room SHALL treat an inserted removable USB as the source for phone-side
 - **THEN** the original ordinary/BLE/Local JSON chat route SHALL remain available.
 - **WHEN** a USB job is running
 - **THEN** repeated send, topic/source and debug changes SHALL be locked; cancellation, unplugging, source/topic changes or logout SHALL invalidate its export and late events SHALL NOT restore it or reroute that message to the network.
+
+### Requirement: USB detection icon and folder tooltip
+The existing upper collapsible chat-settings panel SHALL display a USB icon in its header when removable USB volumes or sources are detected and SHALL hide it when no USB remains. The icon SHALL remain visible while the panel is collapsed. USB authorization, source selection, set information and debug controls SHALL be integrated into this existing upper dropdown rather than a separate AppBar entry, bottom sheet or permanent source-settings card in the message list. Chat bubbles and the composer SHALL remain intact. A selected authorized source with a valid ready set SHALL be distinguished from pending authorization, unselected multiple sources or an unready set through text and visual state. Mouse hover and touch long-press SHALL expose a Tooltip containing the selected source's readable label as the folder name, never its sourceId or SAF URI. Without a selection, the tooltip SHALL identify pending authorization or folder selection instead of guessing a source. Tapping the icon or the existing settings button SHALL expand the upper panel; its live source controls SHALL have bounded scrollable height and SHALL NOT overflow with the mobile keyboard open. Busy jobs SHALL disable mutation controls. Insertion, hover, long-press and expanding settings SHALL NOT start computation or networking. Only sending valid chat text with ready USB and set SHALL run C locus computation in the same chat message stream.
+
+#### Scenario: Selected folder tooltip
+- **WHEN** a detected USB has a selected source and the user hovers or long-presses the USB icon
+- **THEN** the tooltip SHALL display the selected readable folder label and current readiness, without replacing the conversation or starting a job.
+
+##### Example: Hover before chat send
+- **GIVEN** source usb1 has label "USB / gene" and the alcohol set is ready
+- **WHEN** the user hovers or long-presses the USB icon and opens its settings
+- **THEN** the folder tooltip SHALL contain "USB / gene", exclude "usb1", and runCalls SHALL remain zero until the user sends text.
+
+#### Scenario: Pending selection and removal
+- **WHEN** multiple sources are detected without a selection or authorization is pending
+- **THEN** the icon SHALL show a pending text state, submission SHALL remain blocked and no folder SHALL be presented as selected.
+- **WHEN** the selected source is invalidated or USB is removed
+- **THEN** the old folder tooltip SHALL be cleared; after discovery confirms no USB, the icon SHALL disappear and stale events SHALL NOT restore old results.
