@@ -11,6 +11,7 @@ import 'package:geneapp/chat_room_page.dart';
 import 'package:geneapp/models.dart';
 import 'package:geneapp/snp_compute.dart';
 import 'package:geneapp/snp_compute_page.dart';
+import 'package:geneapp/snp_chat_panel.dart';
 import 'package:geneapp/snp_sets.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -19,6 +20,9 @@ import 'snp_locus_compute_test.dart' show FakeLocusPlatform, locusWire;
 class NoAi extends Fake implements ApiService {}
 
 class ChatUsbPlatform extends FakeLocusPlatform {
+  Future<Object?> Function()? onSources;
+  @override
+  Future<Object?> sources() => onSources?.call() ?? super.sources();
   Future<Object?> Function(String)? onAccess, onSelect;
   int accessCalls = 0, selectCalls = 0;
   String? lastVolume;
@@ -61,6 +65,400 @@ class NoHttp extends HttpOverrides {
 }
 
 void main() {
+  testWidgets(
+      'pending preference hides JSON; late load cannot override user toggle; only bool persists',
+      (tester) async {
+    final semantics = tester.ensureSemantics();
+    SharedPreferences.setMockInitialValues({'snp_chat_show_api_json': true});
+    final prefs = await SharedPreferences.getInstance();
+    final load = Completer<SharedPreferences>();
+    final queries = SnpSets.alcohol
+        .parse(File(SnpSets.alcohol.assetPath!).readAsBytesSync());
+    final p = ChatUsbPlatform();
+    final c = SnpComputeController(platform: p, supported: true);
+    final chat = ChatController(api: NoAi(), threadId: 'preference');
+    await tester.pumpWidget(MaterialApp(
+        home: ChangeNotifierProvider.value(
+            value: chat,
+            child: ChatRoomPage(
+                snpCompute: c,
+                snpSetLoader: (_) async => queries,
+                snpPreferencesLoader: () => load.future))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('使用此 USB'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'private query');
+    await tester.tap(find.byIcon(Icons.send));
+    await tester.pumpAndSettle();
+    p.stream.add({
+      'revision': 2,
+      'jobId': 'job1',
+      'status': 'completed',
+      'mode': 'locus',
+      'completed': 77,
+      'total': 77,
+      'results': SnpLocus.group(queries).map(locusWire).toList()
+    });
+    await tester.pumpAndSettle();
+    expect(
+        find.descendant(
+            of: find.byType(SnpChatResultCard),
+            matching: find.byType(SelectableText)),
+        findsNothing);
+    await tester.tap(find.byTooltip('開啟設定'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('顯示 API JSON'));
+    await tester.tap(find.text('顯示 API JSON'));
+    await tester.pump();
+    load.complete(prefs);
+    await tester.pumpAndSettle();
+    expect(find.text('已完成，API JSON 已隱藏'), findsOneWidget);
+    expect(prefs.getKeys(), {'snp_chat_show_api_json'});
+    expect(prefs.getBool('snp_chat_show_api_json'), false);
+    expect(c.locusResults.length, 77);
+    expect(p.runCalls, 1);
+    expect(find.text('查看 debug／分段計時'), findsNothing);
+    await tester.enterText(find.byType(TextField), 'second private query');
+    await tester.tap(find.byIcon(Icons.send));
+    await tester.pumpAndSettle();
+    final visibility = tester.widget<SwitchListTile>(
+        find.widgetWithText(SwitchListTile, '顯示 API JSON'));
+    expect(visibility.onChanged, isNotNull);
+    expect(visibility.value, false);
+    p.stream.add({
+      'revision': 3,
+      'jobId': 'job1',
+      'status': 'completed',
+      'mode': 'locus',
+      'completed': 77,
+      'total': 77,
+      'results': SnpLocus.group(queries).map(locusWire).toList()
+    });
+    await tester.pumpAndSettle();
+    expect(p.runCalls, 2);
+    expect(find.text('已完成，API JSON 已隱藏'), findsOneWidget);
+    expect(
+        find.descendant(
+            of: find.byType(SnpChatResultCard),
+            matching: find.byType(SelectableText)),
+        findsNothing);
+    expect(find.bySemanticsLabel(RegExp('"SNP_list"')), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    c.dispose();
+    final next = SnpComputeController(platform: p, supported: true);
+    await tester.pumpWidget(MaterialApp(
+        home: ChangeNotifierProvider.value(
+            value: chat, child: ChatRoomPage(snpCompute: next))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('開啟設定'));
+    await tester.pumpAndSettle();
+    expect(
+        tester
+            .widget<SwitchListTile>(
+                find.widgetWithText(SwitchListTile, '顯示 API JSON'))
+            .value,
+        false);
+    expect(next.locusResults, isEmpty);
+    expect(find.byType(SnpChatResultCard), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    next.dispose();
+    chat.dispose();
+    await p.stream.close();
+    semantics.dispose();
+  });
+  for (final saved in [false, 'invalid', null]) {
+    testWidgets(
+        'JSON display preference is type-safe and survives page entry: $saved',
+        (tester) async {
+      SharedPreferences.setMockInitialValues(
+          {if (saved != null) 'snp_chat_show_api_json': saved});
+      final p = ChatUsbPlatform();
+      final c = SnpComputeController(platform: p, supported: true);
+      final chat = ChatController(api: NoAi(), threadId: 'pref-type');
+      await tester.pumpWidget(MaterialApp(
+          home: ChangeNotifierProvider.value(
+              value: chat, child: ChatRoomPage(snpCompute: c))));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('開啟設定'));
+      await tester.pumpAndSettle();
+      expect(
+          tester
+              .widget<SwitchListTile>(
+                  find.widgetWithText(SwitchListTile, '顯示 API JSON'))
+              .value,
+          saved == null);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+      chat.dispose();
+      await p.stream.close();
+    });
+  }
+  for (final invalidation in ['topic', 'cancel', 'logout', 'dispose']) {
+    testWidgets(
+        'explicit diagnostic closes on $invalidation without restoring stale result',
+        (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final p = ChatUsbPlatform();
+      final c = SnpComputeController(platform: p, supported: true);
+      final chat = ChatController(api: NoAi(), threadId: 'diagnostic');
+      final queries = SnpSets.alcohol
+          .parse(File(SnpSets.alcohol.assetPath!).readAsBytesSync());
+      await tester.pumpWidget(MaterialApp(
+          home: ChangeNotifierProvider.value(
+              value: chat,
+              child: ChatRoomPage(
+                  snpCompute: c,
+                  onLogout: () {},
+                  snpSetLoader: (_) async => queries))));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('使用此 USB'));
+      await tester.pumpAndSettle();
+      c.setDebugEnabled(true);
+      await tester.enterText(find.byType(TextField), 'timing');
+      await tester.tap(find.byIcon(Icons.send));
+      await tester.pumpAndSettle();
+      final complete = {
+        'revision': 2,
+        'jobId': 'job1',
+        'status': 'completed',
+        'mode': 'locus',
+        'completed': 77,
+        'total': 77,
+        'results': SnpLocus.group(queries)
+            .map((q) => locusWire(q, debug: true))
+            .toList(),
+        'debugTiming': {
+          'setupIoMs': 3.0,
+          'queryIoMs': 539.0,
+          'countMs': 385.0,
+          'genotypeMs': 154.0,
+          'overheadMs': 82.0,
+          'totalMs': 1163.0
+        }
+      };
+      p.stream.add(complete);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('開啟設定'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('查看 debug／分段計時'));
+      await tester.tap(find.text('查看 debug／分段計時'));
+      await tester.pumpAndSettle();
+      expect(find.text('USB 診斷／分段計時'), findsOneWidget);
+      if (invalidation == 'topic') {
+        await chat.setTopic(ChatTopic.medication);
+      } else if (invalidation == 'cancel') {
+        await c.cancel();
+      } else if (invalidation == 'logout') {
+        await tester.tap(find.text('關閉'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byTooltip('開啟選單'));
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(find.text('Log out'));
+        await tester.tap(find.text('Log out'));
+      } else {
+        await tester.pumpWidget(const SizedBox());
+      }
+      await tester.pumpAndSettle();
+      expect(find.text('USB 診斷／分段計時'), findsNothing);
+      expect(c.debugReport, isNull);
+      p.stream.add({...complete, 'revision': 5});
+      await tester.pumpAndSettle();
+      expect(c.debugReport, isNull);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+      chat.dispose();
+      await p.stream.close();
+    });
+  }
+  testWidgets(
+      'USB detected while app inactive waits for foreground without topic tap',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final p = ChatUsbPlatform();
+    final ready = p.sourceState;
+    p.sourceState = {
+      'revision': 1,
+      'sources': [],
+      'volumes': [],
+      'selectedSourceId': null
+    };
+    final c = SnpComputeController(platform: p, supported: true);
+    final chat = ChatController(
+        api: NoAi(), threadId: 'foreground', topic: ChatTopic.medication);
+    await tester.pumpWidget(MaterialApp(
+        home: ChangeNotifierProvider.value(
+            value: chat, child: ChatRoomPage(snpCompute: c))));
+    await tester.pumpAndSettle();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    p.sourceState = {...ready, 'revision': 2};
+    await c.refresh();
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+    expect(find.text('USB 使用確認'), findsOneWidget);
+    expect(p.runCalls, 0);
+    await tester.pumpWidget(const SizedBox());
+    c.dispose();
+    chat.dispose();
+    await p.stream.close();
+  });
+  for (final topic in [ChatTopic.alcohol, ChatTopic.medication]) {
+    testWidgets(
+        'mount snapshot prompts without topic tap while scan/set pending: ${topic.key}',
+        (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final p = ChatUsbPlatform();
+      p.sourceState = {
+        'revision': 1,
+        'sources': [],
+        'volumes': [],
+        'selectedSourceId': null
+      };
+      final c = SnpComputeController(platform: p, supported: true);
+      final chat = ChatController(api: NoAi(), threadId: 'mount', topic: topic);
+      final load = Completer<List<SnpQuery>>();
+      await tester.pumpWidget(MaterialApp(
+          home: ChangeNotifierProvider.value(
+              value: chat,
+              child: ChatRoomPage(
+                  snpCompute: c, snpSetLoader: (_) => load.future))));
+      await tester.pumpAndSettle();
+      final scan = Completer<Object?>();
+      p.onSources = () => scan.future;
+      p.stream.add({'revision': 2, 'status': 'sourcesChanged'});
+      p.stream.add({
+        'revision': 3,
+        'status': 'sourcesSnapshot',
+        'scanning': true,
+        'sources': [],
+        'selectedSourceId': null,
+        'volumes': [
+          {'id': 'ABCD-1234', 'label': 'USB', 'authorized': true}
+        ]
+      });
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.text('USB 使用確認'), findsOneWidget);
+      expect(find.text('USB 來源掃描中'), findsOneWidget);
+      expect(
+          tester
+              .widget<FilledButton>(
+                  find.widgetWithText(FilledButton, '使用此 USB'))
+              .onPressed,
+          isNull);
+      expect(chat.topic, topic);
+      expect(p.runCalls, 0);
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      scan.complete({
+        'revision': 4,
+        'sources': [],
+        'selectedSourceId': null,
+        'volumes': [
+          {'id': 'ABCD-1234', 'label': 'USB', 'authorized': true}
+        ]
+      });
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+      chat.dispose();
+      await p.stream.close();
+    });
+  }
+  testWidgets(
+      'new USB under another route prompts on return without topic interaction',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final p = ChatUsbPlatform();
+    final ready = p.sourceState;
+    p.sourceState = {
+      'revision': 1,
+      'sources': [],
+      'volumes': [],
+      'selectedSourceId': null
+    };
+    final c = SnpComputeController(platform: p, supported: true);
+    final chat = ChatController(
+        api: NoAi(), threadId: 'route', topic: ChatTopic.medication);
+    final nav = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(MaterialApp(
+        navigatorKey: nav,
+        home: ChangeNotifierProvider.value(
+            value: chat, child: ChatRoomPage(snpCompute: c))));
+    await tester.pumpAndSettle();
+    unawaited(nav.currentState!.push(MaterialPageRoute<void>(
+        builder: (_) => const Scaffold(body: Text('other route')))));
+    await tester.pumpAndSettle();
+    p.sourceState = {...ready, 'revision': 2};
+    await c.refresh();
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
+    nav.currentState!.pop();
+    await tester.pumpAndSettle();
+    expect(find.text('USB 使用確認'), findsOneWidget);
+    expect(p.runCalls, 0);
+    await tester.pumpWidget(const SizedBox());
+    c.dispose();
+    chat.dispose();
+    await p.stream.close();
+  });
+  testWidgets(
+      'new USB while busy prompts only when idle; removed deferred USB stays gone',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final p = ChatUsbPlatform();
+    final ready = p.sourceState;
+    final c = SnpComputeController(platform: p, supported: true);
+    final chat = ChatController(api: NoAi(), threadId: 'busy');
+    await tester.pumpWidget(MaterialApp(
+        home: ChangeNotifierProvider.value(
+            value: chat, child: ChatRoomPage(snpCompute: c))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('使用此 USB'));
+    await tester.pumpAndSettle();
+    final q =
+        SnpQuery.validated(id: 'rs1', sequence: 'A' * 301, ref: 'A', alt: 'C');
+    await c.run([q]);
+    p.sourceState = {
+      ...ready,
+      'revision': 2,
+      'volumes': [
+        ...(ready['volumes'] as List),
+        {'id': 'ABCD-1234', 'label': 'new USB', 'authorized': false}
+      ]
+    };
+    await c.refresh();
+    await tester.pumpAndSettle();
+    expect(c.busy, true);
+    expect(find.byType(AlertDialog), findsNothing);
+    await c.cancel();
+    await tester.pumpAndSettle();
+    expect(find.text('USB 使用確認'), findsOneWidget);
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    final nav = Navigator.of(tester.element(find.byType(ChatRoomPage)));
+    unawaited(
+        nav.push(MaterialPageRoute<void>(builder: (_) => const SizedBox())));
+    await tester.pumpAndSettle();
+    p.stream.add(
+        {'revision': 3, 'status': 'invalidated', 'errorCode': 'USB_REMOVED'});
+    await tester.pumpAndSettle();
+    nav.pop();
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    c.dispose();
+    chat.dispose();
+    await p.stream.close();
+  });
   testWidgets(
       'multiple USBs require a volume and source choice; subfolder grant stays explicit',
       (tester) async {
@@ -510,7 +908,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(p.lastQueries.length, 143);
     expect(p.lastDebug, true);
-    expect(tester.widget<SwitchListTile>(find.byType(SwitchListTile)).onChanged,
+    expect(
+        tester
+            .widget<SwitchListTile>(
+                find.widgetWithText(SwitchListTile, 'Debug：結果與分段計時'))
+            .onChanged,
         isNull);
     await tester.ensureVisible(find.text('USB 來源已選定'));
     await tester.tap(find.text('USB 來源已選定'));
@@ -554,6 +956,16 @@ void main() {
     });
     await tester.pumpAndSettle();
     expect(find.text('完成 77／77 位點'), findsOneWidget);
+    expect(find.text('每位點 genotype／posterior'), findsNothing);
+    expect(find.text('查看 debug 結果'), findsNothing);
+    expect(find.textContaining('1163.000'), findsNothing);
+    final apiText = find.descendant(
+        of: find.byType(SnpChatResultCard),
+        matching: find.byType(SelectableText));
+    expect(apiText, findsOneWidget);
+    expect(
+        tester.getSize(find.byType(SnpChatResultCard)).height, lessThan(350));
+    final originalJson = tester.widget<SelectableText>(apiText).data!;
     expect(copied, isNull);
     await tester.ensureVisible(find.text('複製 API JSON'));
     await tester.pumpAndSettle();
@@ -569,13 +981,29 @@ void main() {
             .toSet()
             .length,
         77);
+    await tester.ensureVisible(find.text('顯示 API JSON'));
+    await tester.tap(find.text('顯示 API JSON'));
+    await tester.pumpAndSettle();
+    expect(apiText, findsNothing);
+    expect(find.text('已完成，API JSON 已隱藏'), findsOneWidget);
+    expect(p.runCalls, 1);
+    expect(copied, originalJson);
+    await tester.tap(find.text('顯示 API JSON'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<SelectableText>(apiText).data, originalJson);
+    expect(p.runCalls, 1);
+    await tester.ensureVisible(find.text('查看 debug／分段計時'));
+    await tester.tap(find.text('查看 debug／分段計時'));
+    await tester.pumpAndSettle();
     expect(find.textContaining('1163.000'), findsOneWidget);
     expect(chat.messages.map((m) => m.content), ['上一則對話']);
     final prefs = await SharedPreferences.getInstance();
-    expect(prefs.getKeys(), isEmpty);
+    expect(prefs.getKeys(), {'snp_chat_show_api_json'});
+    expect(prefs.getBool('snp_chat_show_api_json'), true);
     p.stream.add(
         {'revision': 3, 'status': 'invalidated', 'errorCode': 'USB_REMOVED'});
     await tester.pumpAndSettle();
+    expect(find.text('USB 診斷／分段計時'), findsNothing);
     expect(find.text('複製 API JSON'), findsNothing);
     expect(compute.locusResults, isEmpty);
     await tester.pumpWidget(const SizedBox());

@@ -3,6 +3,7 @@ import "package:flutter/foundation.dart";
 import "package:flutter/material.dart";
 import "package:flutter_markdown/flutter_markdown.dart";
 import "package:provider/provider.dart";
+import 'package:shared_preferences/shared_preferences.dart';
 import "package:speech_to_text/speech_recognition_result.dart";
 import "package:speech_to_text/speech_to_text.dart";
 import "chat_controller.dart";
@@ -20,6 +21,8 @@ class ChatRoomPage extends StatefulWidget {
   final UsbGeneDongleController? usbGeneDongle;
   final SnpComputeController? snpCompute;
   final Future<List<SnpQuery>> Function(SnpSet)? snpSetLoader;
+  final Future<SharedPreferences> Function()? snpPreferencesLoader;
+  static const apiJsonPreferenceKey = 'snp_chat_show_api_json';
 
   const ChatRoomPage({
     super.key,
@@ -28,6 +31,7 @@ class ChatRoomPage extends StatefulWidget {
     this.usbGeneDongle,
     this.snpCompute,
     this.snpSetLoader,
+    this.snpPreferencesLoader,
   });
 
   @override
@@ -53,6 +57,90 @@ class _ChatRoomPageState extends State<ChatRoomPage>
   DialogRoute<void>? _usbDialog;
   Set<String> _dialogUsbIds = {};
   bool _usbPromptScheduled = false;
+  bool _showApiJson = true, _jsonPreferenceReady = false;
+  int _jsonPreferenceRevision = 0;
+  late final Future<SharedPreferences> _snpPreferences;
+  Future<void> _preferenceWrites = Future.value();
+  DialogRoute<void>? _diagnosticsDialog;
+  String? _diagnosticsJobId;
+
+  Future<void> _loadJsonPreference() async {
+    final revision = _jsonPreferenceRevision;
+    try {
+      final prefs = await _snpPreferences;
+      final saved = prefs.get(ChatRoomPage.apiJsonPreferenceKey);
+      if (!mounted || revision != _jsonPreferenceRevision) return;
+      setState(() {
+        _showApiJson = saved == null || saved == true;
+        _jsonPreferenceReady = true;
+      });
+    } catch (_) {
+      if (mounted && revision == _jsonPreferenceRevision) {
+        setState(() {
+          _showApiJson = false;
+          _jsonPreferenceReady = true;
+        });
+      }
+    }
+  }
+
+  void _setJsonVisible(bool value) {
+    _jsonPreferenceRevision++;
+    setState(() {
+      _showApiJson = value;
+      _jsonPreferenceReady = true;
+    });
+    // Serialize boolean-only writes so quick toggles cannot persist out of order.
+    _preferenceWrites = _preferenceWrites.then((_) async {
+      try {
+        final prefs = await _snpPreferences;
+        if (!await prefs.setBool(ChatRoomPage.apiJsonPreferenceKey, value)) {
+          throw StateError('Preference write failed');
+        }
+      } catch (_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('顯示偏好未能保存；本次畫面設定仍有效。')));
+        }
+      }
+    });
+  }
+
+  void _closeDiagnostics() {
+    final route = _diagnosticsDialog;
+    _diagnosticsDialog = null;
+    _diagnosticsJobId = null;
+    if (route == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (route.isActive) route.navigator?.removeRoute(route);
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  void _openDiagnostics() {
+    if (_diagnosticsDialog != null ||
+        _snp.debugReport == null ||
+        _snp.resultJobId == null ||
+        _snp.busy) {
+      return;
+    }
+    final route = DialogRoute<void>(
+        context: context,
+        builder: (_) => SnpChatDiagnosticsDialog(controller: _snp));
+    _diagnosticsJobId = _snp.resultJobId;
+    _diagnosticsDialog = route;
+    unawaited(Navigator.of(context).push(route).whenComplete(() {
+      if (identical(_diagnosticsDialog, route)) {
+        _diagnosticsDialog = null;
+        _diagnosticsJobId = null;
+      }
+      if (mounted) _scheduleUsbPrompt();
+    }));
+  }
+
+  bool get _foreground =>
+      WidgetsBinding.instance.lifecycleState == null ||
+      WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
   bool get _usesUsb =>
       _snp.supported &&
       (_snp.sources.isNotEmpty || _snp.volumes.isNotEmpty || _snp.busy);
@@ -66,12 +154,17 @@ class _ChatRoomPageState extends State<ChatRoomPage>
   bool get _canOfflineSend =>
       _snp.supported &&
       !_snp.busy &&
+      !_snp.sourceScanning &&
       _snpSet.available &&
       _snpQueries != null &&
       _snp.sourceConfirmed &&
       _snp.selectedSourceId != null;
   void _snpChanged() {
     if (!mounted) return;
+    if (_diagnosticsDialog != null &&
+        (_snp.debugReport == null || _snp.resultJobId != _diagnosticsJobId)) {
+      _closeDiagnostics();
+    }
     final attached = _usesUsb;
     if (attached != _usbAttached) {
       _usbAttached = attached;
@@ -101,6 +194,7 @@ class _ChatRoomPageState extends State<ChatRoomPage>
 
   void _scheduleUsbPrompt() {
     if (_usbPromptScheduled ||
+        !_foreground ||
         _usbDialog != null ||
         _snp.busy ||
         !_snp.mountedUsbIds.any((id) => !_usbPrompted.contains(id))) {
@@ -110,6 +204,7 @@ class _ChatRoomPageState extends State<ChatRoomPage>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _usbPromptScheduled = false;
       if (!mounted ||
+          !_foreground ||
           _snp.busy ||
           ModalRoute.of(context)?.isCurrent != true ||
           !_snp.mountedUsbIds.any((id) => !_usbPrompted.contains(id))) {
@@ -117,10 +212,12 @@ class _ChatRoomPageState extends State<ChatRoomPage>
       }
       _openUsbConfirmation();
     });
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
 
   void _openUsbConfirmation() {
     if (!mounted ||
+        !_foreground ||
         _snp.busy ||
         _usbDialog != null ||
         _snp.mountedUsbIds.isEmpty) {
@@ -146,6 +243,9 @@ class _ChatRoomPageState extends State<ChatRoomPage>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    // Subscribe to route-current changes, not just topic/controller changes.
+    ModalRoute.of(context);
+    _scheduleUsbPrompt();
     final chat = context.read<ChatController>();
     if (_chat != chat) {
       _chat?.removeListener(_chatChanged);
@@ -234,6 +334,9 @@ class _ChatRoomPageState extends State<ChatRoomPage>
     _usbGeneDongle?.start();
     _snp = widget.snpCompute ?? SnpComputeController();
     _snp.addListener(_snpChanged);
+    _snpPreferences =
+        widget.snpPreferencesLoader?.call() ?? SharedPreferences.getInstance();
+    unawaited(_loadJsonPreference());
     unawaited(_snp.start());
     _initSpeech();
   }
@@ -243,6 +346,7 @@ class _ChatRoomPageState extends State<ChatRoomPage>
     if (state == AppLifecycleState.resumed) {
       _usbGeneDongle?.refresh();
       unawaited(_snp.refresh());
+      _scheduleUsbPrompt();
     }
   }
 
@@ -256,6 +360,7 @@ class _ChatRoomPageState extends State<ChatRoomPage>
 
   @override
   void dispose() {
+    _closeDiagnostics();
     _closeUsbDialog();
     WidgetsBinding.instance.removeObserver(this);
     if (_ownsUsbGeneDongle) _usbGeneDongle?.dispose();
@@ -593,6 +698,7 @@ class _ChatRoomPageState extends State<ChatRoomPage>
             : () {
                 Navigator.of(context).pop();
                 _loadGeneration++;
+                _closeDiagnostics();
                 _closeUsbDialog();
                 _snp.clearUsbConfirmation();
                 setState(() => _usbMessage = null);
@@ -663,7 +769,10 @@ class _ChatRoomPageState extends State<ChatRoomPage>
                                 controller: _snp,
                                 set: _snpSet,
                                 queries: _snpQueries,
-                                error: _snpError)
+                                error: _snpError,
+                                showApiJson: _showApiJson,
+                                onShowApiJsonChanged: _setJsonVisible,
+                                onOpenDiagnostics: _openDiagnostics)
                             : null,
                       ),
                       Expanded(
@@ -687,7 +796,10 @@ class _ChatRoomPageState extends State<ChatRoomPage>
                                     _Bubble(msg: _usbMessage!),
                                     if (_snp.status == 'completed' &&
                                         _snp.locusResults.isNotEmpty)
-                                      SnpChatResultCard(controller: _snp)
+                                      SnpChatResultCard(
+                                          controller: _snp,
+                                          showApiJson: _jsonPreferenceReady &&
+                                              _showApiJson)
                                     else
                                       SnpChatJobCard(controller: _snp),
                                   ],

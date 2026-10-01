@@ -1,5 +1,39 @@
 ## ADDED Requirements
 
+The completed-USB LLM requirements below SHALL supersede the earlier pre-LLM boundary and HTTP prohibition for chat jobs only. Legacy independent computation SHALL remain offline. USB requests, diagnostic results and responses SHALL remain ephemeral; existing ordinary chat behavior SHALL remain unchanged.
+
+### Requirement: Reuse existing LLM API for completed USB chat jobs
+The chat SHALL capture the existing GeneLLM enabled flag at USB submission. When enabled, a fully validated current completed locus job SHALL submit its API request exactly once through the existing ApiService.askLlm endpoint, JSON contract and response parser, without invoking BLE or Local JSON computation. Disabled submissions SHALL stop at offline result presentation. Request identity and locus counts SHALL come from the completed job snapshot; no-calls SHALL be excluded from the three identical variant lists without losing input/no-call counts. Diagnostic fields, raw data and source URIs SHALL NOT be transmitted. USB request logging and chat-history persistence SHALL remain disabled. JSON display preference SHALL NOT affect submission or cause resubmission. Insertion, source confirmation and partial, failed, cancelled or invalid computation SHALL NOT invoke LLM.
+
+#### Scenario: Enabled submission completes
+- **WHEN** a GeneLLM-enabled USB chat job completes with a valid API export
+- **THEN** the existing LLM API SHALL be called once, its parsed answer SHALL appear in the original chat message stream, and neither BLE nor mock computation SHALL run.
+
+##### Example: Preserve no-call counts
+- **GIVEN** a completed 77-locus alcohol job with 70 calls and seven no-calls, user_id=u1 and query="我能喝酒嗎"
+- **WHEN** the enabled job is sent to LLM
+- **THEN** all three variant lists SHALL contain the same 70 entries, variant_input_count=77, variant_used_count=70, no_call_count=7, yuguard=null, and the captured identity/query SHALL be preserved.
+
+#### Scenario: Disabled submission and visibility changes
+- **WHEN** GeneLLM was disabled at submission or the user changes JSON visibility after completion
+- **THEN** disabled submissions SHALL cause no HTTP, and visibility changes SHALL cause no additional computation or request, without hiding a valid LLM answer.
+
+### Requirement: Job-scoped USB LLM responses and explicit retry
+USB LLM waiting, answers and failures SHALL render as ephemeral entries in the original chat using existing bubble rendering. Computation and LLM waiting SHALL block duplicate sends. Duplicate completion events SHALL NOT duplicate requests. Failed LLM requests SHALL leave valid C results available and offer explicit retry of the same request only while the job is valid and GeneLLM is enabled; retry SHALL NOT rerun C or silently fall back to other data. Cancellation, removal, source/topic change, logout and disposal SHALL invalidate response generation and suppress late success and failure. Old callbacks SHALL NOT clear newer request state. No automatic retry, TTS, clipboard writes or persistence SHALL occur. Already transmitted requests SHALL NOT be represented as retractable.
+
+#### Scenario: Retry a failed request
+- **WHEN** LLM HTTP fails for a still-valid completed USB job and the user explicitly retries
+- **THEN** one additional request SHALL use the same snapshot without a new C run; pending state SHALL block another simultaneous retry.
+
+##### Example: Failure then retry
+- **GIVEN** runCalls=1 and one failed LLM request for job j1
+- **WHEN** the user presses retry once and receives answer="測試回覆"
+- **THEN** runCalls SHALL remain 1, LLM request count SHALL equal 2, and one current answer SHALL be visible without persisted genetic payloads.
+
+#### Scenario: Ignore invalidated replies
+- **WHEN** a pending request's job is invalidated by removal, cancellation, source/topic change, logout or page disposal
+- **THEN** pending/retry/result bubbles SHALL clear and its later success or failure SHALL NOT appear or alter a newer job.
+
 The independent query-page and 143-query requirements below SHALL remain the legacy/advanced workflow. The added chat workflow SHALL use the separate joint-locus mode defined below, with 77 locus results derived from the unchanged 143-record reference panel. Legacy per-query results SHALL NOT substitute for joint-locus evidence or API export. The USB-source chat message flow requirement added on 2026-10-01 SHALL supersede the previously implemented explicit USB-offline switch and replacement chat body; its pre-LLM boundary and ephemeral-result restrictions SHALL remain unchanged.
 
 The dismissible insertion confirmation below SHALL take precedence over the earlier icon-tap behavior: tapping the USB icon SHALL reopen confirmation, while the existing settings arrow SHALL continue to expand the upper settings panel. Source metadata persistence SHALL be distinct from the prohibition on persisting genetic results.

@@ -72,6 +72,9 @@ class FakeSnpPlatform implements SnpComputePlatform {
 }
 
 class MutableSourcePlatform extends FakeSnpPlatform {
+  Future<Object?> Function()? onSources;
+  @override
+  Future<Object?> sources() => onSources?.call() ?? super.sources();
   Map<String, Object?> snapshot = sourceWire(1);
   Future<Object?> Function()? onSelect;
   @override
@@ -83,6 +86,42 @@ class MutableSourcePlatform extends FakeSnpPlatform {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test('scanning snapshot is not permission to confirm or compute', () async {
+    final p = MutableSourcePlatform();
+    final c = SnpComputeController(platform: p, supported: true);
+    await c.start();
+    p.stream
+        .add({...sourceWire(2), 'status': 'sourcesSnapshot', 'scanning': true});
+    expect(c.sourceScanning, true);
+    expect(await c.confirmUsbSource(), false);
+    await c.run([query]);
+    expect(p.runCalls, 0);
+    c.dispose();
+    await p.stream.close();
+  });
+  test('late scan reply and error after removal do not restore attachment',
+      () async {
+    for (final error in [false, true]) {
+      final p = MutableSourcePlatform();
+      final c = SnpComputeController(platform: p, supported: true);
+      await c.start();
+      final reply = Completer<Object?>();
+      p.onSources = () => reply.future;
+      final scanning = c.refresh();
+      p.stream.add(
+          {'revision': 2, 'status': 'invalidated', 'errorCode': 'USB_REMOVED'});
+      if (error) {
+        reply.completeError(PlatformException(code: 'CANCELLED'));
+      } else {
+        reply.complete(sourceWire(3));
+      }
+      await scanning;
+      expect(c.sources, isEmpty);
+      expect(c.errorCode, 'USB_REMOVED');
+      c.dispose();
+      await p.stream.close();
+    }
+  });
   test('invalid permission metadata clears an already confirmed source',
       () async {
     final p = MutableSourcePlatform();

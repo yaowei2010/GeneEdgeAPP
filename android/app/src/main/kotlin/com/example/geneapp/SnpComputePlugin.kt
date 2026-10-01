@@ -125,6 +125,9 @@ class SnpComputePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallH
     }
     private fun discover(result: MethodChannel.Result) {
         val token = sourceRevision
+        // Publish mounted volumes before provider traversal, which can be slow.
+        // A snapshot is not a completed scan or permission to start computation.
+        emit(mapOf("status" to "sourcesSnapshot") + snapshot() + ("scanning" to true))
         worker.execute {
             try {
                 val roots = context.contentResolver.persistedUriPermissions.filter { it.isReadPermission && valid(it.uri) }.map {
@@ -142,7 +145,8 @@ class SnpComputePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallH
                             sourcePreferences.getString(v.uuid!!.lowercase(), null)?.let { v.uuid!! to it }
                         }.toMap()
                         selected = SnpUsbAccess.restore(selected, pairs, remembered)
-                        revision++; result.success(snapshot())
+                        emit(mapOf("status" to "sourcesSnapshot") + snapshot())
+                        result.success(snapshot())
                     }
                 }
             } catch(e: Exception) { main.post { result.error(failure(e), "Unable to discover USB source", null) } }

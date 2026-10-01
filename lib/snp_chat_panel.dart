@@ -114,7 +114,7 @@ class _SnpUsbConfirmationDialogState extends State<SnpUsbConfirmationDialog> {
         final selected = sources.any((s) => s['id'] == c.selectedSourceId)
             ? c.selectedSourceId
             : null;
-        final locked = _changing || c.busy || c.accessBusy;
+        final locked = _changing || c.busy || c.accessBusy || c.sourceScanning;
         final scopes =
             (volume?['authorizationScopes'] as List?)?.cast<String>() ??
                 const <String>[];
@@ -137,6 +137,7 @@ class _SnpUsbConfirmationDialogState extends State<SnpUsbConfirmationDialog> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                         const Text('預設位置：USB 根目錄'),
+                        if (c.sourceScanning) const Text('USB 來源掃描中'),
                         const Text('首次仍需在系統頁面確認唯讀授權；若根目錄受限制，可授權含資料的子資料夾。'),
                         if (volumes.length > 1)
                           DropdownButtonFormField<String>(
@@ -255,11 +256,17 @@ class SnpChatControls extends StatelessWidget {
       required this.controller,
       required this.set,
       required this.queries,
-      required this.error});
+      required this.error,
+      required this.showApiJson,
+      required this.onShowApiJsonChanged,
+      required this.onOpenDiagnostics});
   final SnpComputeController controller;
   final SnpSet set;
   final List<SnpQuery>? queries;
   final String? error;
+  final bool showApiJson;
+  final ValueChanged<bool> onShowApiJsonChanged;
+  final VoidCallback onOpenDiagnostics;
   @override
   Widget build(BuildContext context) => Card(
       child: Padding(
@@ -330,9 +337,19 @@ class SnpChatControls extends StatelessWidget {
                 ]),
             SwitchListTile(
                 contentPadding: EdgeInsets.zero,
+                title: const Text('顯示 API JSON'),
+                value: showApiJson,
+                onChanged: onShowApiJsonChanged),
+            SwitchListTile(
+                contentPadding: EdgeInsets.zero,
                 title: const Text('Debug：結果與分段計時'),
                 value: controller.debugEnabled,
                 onChanged: controller.busy ? null : controller.setDebugEnabled),
+            if (controller.debugReport != null && !controller.busy)
+              TextButton.icon(
+                  onPressed: onOpenDiagnostics,
+                  icon: const Icon(Icons.timer_outlined),
+                  label: const Text('查看 debug／分段計時')),
             const Text('結果含敏感基因資訊；複製會寫入剪貼簿，Debug 也會輸出摘要至 logcat。',
                 style: TextStyle(fontSize: 12)),
             if (controller.errorCode != null)
@@ -352,15 +369,10 @@ Widget _timing(Map<String, double> t, {bool batch = false}) => Text([
     ].join('\n'));
 
 class SnpChatResultCard extends StatelessWidget {
-  const SnpChatResultCard({super.key, required this.controller});
+  const SnpChatResultCard(
+      {super.key, required this.controller, required this.showApiJson});
   final SnpComputeController controller;
-  Future<void> _copy(BuildContext context, String text) async {
-    await Clipboard.setData(ClipboardData(text: text));
-    if (context.mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('已複製；內容含敏感基因資訊')));
-    }
-  }
+  final bool showApiJson;
 
   @override
   Widget build(BuildContext context) {
@@ -380,50 +392,76 @@ class SnpChatResultCard extends StatelessWidget {
             padding: const EdgeInsets.all(12),
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('USB・手機 C 計算結果',
-                  style: Theme.of(context).textTheme.titleMedium),
-              Text('完成 ${controller.completed}／${controller.total} 位點'),
-              Text(
-                  '${controller.resultInput!.label} · ${controller.resultInput!.version}'),
-              Text(
-                  '可用 genotype：${payload.request['variant_used_count']} · no-call：${payload.request['no_call_count']}'),
-              const Text('最佳 genotype 是模型估計，參數尚未校準。JSON 尚未送至 API。'),
-              if (controller.batchTiming != null) ...[
-                _timing(controller.batchTiming!, batch: true),
-                const Text(
-                    '計時為經過時間，非 CPU 時間；I/O 包含 provider／cache，Debug 有量測開銷。',
-                    style: TextStyle(fontSize: 12)),
-              ],
-              FilledButton.icon(
-                  onPressed: () => _copy(context, payload.apiJson),
-                  icon: const Icon(Icons.copy),
-                  label: const Text('複製 API JSON')),
-              ExpansionTile(
-                  title: const Text('查看 API JSON'),
-                  children: [SelectableText(payload.apiJson)]),
-              ExpansionTile(
-                  title: const Text('每位點 genotype／posterior'),
-                  children: [
-                    for (final r in controller.locusResults)
-                      ExpansionTile(
-                          title: Text(
-                              '${r.rsId} · ${r.actualGenotype ?? 'no-call'}'),
-                          subtitle: Text(
-                              'posterior：${(r.data['bestPosterior'] as double).toStringAsFixed(6)} · depth：${r.data['effectiveDepth']}'),
-                          children: [
-                            SelectableText(
-                                'GT：${r.gt}\n${r.data['noCallReason'] ?? ''}\nAlleles：${r.data['alleles']}\nCounts：${r.data['baseCounts']}\nPosterior：${r.data['posterior']}'),
-                            if (r.debugTiming != null) _timing(r.debugTiming!),
-                          ]),
-                  ]),
-              if (controller.debugReport != null) ...[
-                TextButton(
-                    onPressed: () => _copy(context, payload.diagnosticJson),
-                    child: const Text('複製 debug 結果')),
-                ExpansionTile(
-                    title: const Text('查看 debug 結果'),
-                    children: [SelectableText(payload.diagnosticJson)]),
+              if (!showApiJson)
+                const Text('已完成，API JSON 已隱藏')
+              else ...[
+                Text('完成 ${controller.completed}／${controller.total} 位點'),
+                FilledButton.icon(
+                    onPressed: () => _copySnpText(context, payload.apiJson),
+                    icon: const Icon(Icons.copy),
+                    label: const Text('複製 API JSON')),
+                ConstrainedBox(
+                    constraints: BoxConstraints(
+                        maxHeight: (MediaQuery.sizeOf(context).height * .25)
+                            .clamp(80.0, 180.0)),
+                    child: SingleChildScrollView(
+                        child: SelectableText(payload.apiJson))),
               ],
             ])));
   }
+}
+
+Future<void> _copySnpText(BuildContext context, String text) async {
+  await Clipboard.setData(ClipboardData(text: text));
+  if (context.mounted) {
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('已複製；內容含敏感基因資訊')));
+  }
+}
+
+class SnpChatDiagnosticsDialog extends StatelessWidget {
+  const SnpChatDiagnosticsDialog({super.key, required this.controller});
+  final SnpComputeController controller;
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+      animation: controller,
+      builder: (context, _) {
+        final export = SnpApiPayload.fromCompleted(controller);
+        final jobId = controller.resultJobId;
+        if (export == null || controller.debugReport == null) {
+          return const SizedBox.shrink();
+        }
+        return AlertDialog(
+            title: const Text('USB 診斷／分段計時'),
+            content: SizedBox(
+                width: 420,
+                child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                        maxHeight: MediaQuery.sizeOf(context).height * .5),
+                    child: SingleChildScrollView(
+                        child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                          const Text('研究模型尚未校準，非 GATK 等效、非臨床判讀。內容含敏感基因資訊。'),
+                          if (controller.batchTiming != null)
+                            _timing(controller.batchTiming!, batch: true),
+                          const Text(
+                              '計時為經過時間，非 CPU 時間；I/O 包含 provider／cache，Debug 有量測開銷。'),
+                          SelectableText(export.diagnosticJson),
+                        ])))),
+            actions: [
+              TextButton(
+                  onPressed: () {
+                    if (controller.resultJobId == jobId &&
+                        controller.debugReport != null) {
+                      unawaited(_copySnpText(context, export.diagnosticJson));
+                    }
+                  },
+                  child: const Text('複製 debug 結果')),
+              TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('關閉')),
+            ]);
+      });
 }

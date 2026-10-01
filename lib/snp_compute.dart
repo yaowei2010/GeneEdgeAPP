@@ -534,7 +534,9 @@ class SnpComputeController extends ChangeNotifier {
 
   Future<bool> confirmUsbSource({bool Function()? stillActive}) async {
     final id = selectedSourceId, epoch = _attachmentGeneration;
-    if (id == null || busy || accessBusy || _disposed) return false;
+    if (id == null || busy || accessBusy || sourceScanning || _disposed) {
+      return false;
+    }
     accessBusy = true;
     _notify();
     try {
@@ -606,6 +608,8 @@ class SnpComputeController extends ChangeNotifier {
   bool _disposed = false, _pending = false, _started = false;
   final List<Object?> _early = [];
   bool get busy => _pending || status == 'running';
+  bool sourceScanning = false;
+  int _refreshGeneration = 0;
   void _notify() {
     if (!_disposed) notifyListeners();
   }
@@ -621,6 +625,7 @@ class SnpComputeController extends ChangeNotifier {
 
   void _fail(Object e) {
     if (_disposed) return;
+    sourceScanning = false;
     _confirmedSourceId = null;
     if (busy) unawaited(_platform.cancel().catchError((Object _) {}));
     _generation++;
@@ -637,6 +642,9 @@ class SnpComputeController extends ChangeNotifier {
     final m = _map(value);
     final revision = _count(m, 'revision');
     if (revision < _revision) return;
+    if (m.containsKey('scanning') && m['scanning'] is! bool) {
+      throw const FormatException('Invalid scanning state');
+    }
     final s = m['sources'], v = m['volumes'];
     if (s is! List || v is! List) {
       throw const FormatException('Invalid sources');
@@ -689,6 +697,7 @@ class SnpComputeController extends ChangeNotifier {
       _pending = false;
     }
     _revision = revision;
+    sourceScanning = m['scanning'] == true;
     sources = List.unmodifiable(parsed);
     volumes = List.unmodifiable(pv);
     selectedSourceId = selected as String?;
@@ -697,11 +706,12 @@ class SnpComputeController extends ChangeNotifier {
 
   Future<void> refresh() async {
     if (!supported || _disposed) return;
+    final refresh = ++_refreshGeneration;
     try {
       final v = await _platform.sources();
-      if (!_disposed) _applySources(v);
+      if (!_disposed && refresh == _refreshGeneration) _applySources(v);
     } catch (e) {
-      _fail(e);
+      if (refresh == _refreshGeneration) _fail(e);
     }
   }
 
@@ -747,7 +757,7 @@ class SnpComputeController extends ChangeNotifier {
       {SnpChatContext? chat,
       SnpInputIdentity input =
           const SnpInputIdentity('single', '單 SNP', 'custom')}) async {
-    if (!supported || _disposed || busy) return;
+    if (!supported || _disposed || busy || sourceScanning) return;
     if (selectedSourceId == null ||
         queries.isEmpty ||
         queries.length > 3000 ||
@@ -806,12 +816,18 @@ class SnpComputeController extends ChangeNotifier {
       final revision = _count(m, 'revision');
       if (revision <= _revision) return;
       final state = _text(m, 'status');
+      if (state == 'sourcesSnapshot') {
+        _applySources(m);
+        return;
+      }
       if (state == 'sourcesChanged') {
         _revision = revision;
         unawaited(refresh());
         return;
       }
       if (state == 'invalidated') {
+        _refreshGeneration++;
+        sourceScanning = false;
         _revision = revision;
         _generation++;
         _jobId = null;

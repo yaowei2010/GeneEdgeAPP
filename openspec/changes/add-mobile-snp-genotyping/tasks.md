@@ -61,7 +61,14 @@
 
 ## 10. 插入即確認與精簡JSON
 
-- [ ] 10.1 在本組程式修改前，將目前已安裝USB確認版的相關dirty程式／tests／文件及本次四份規格限定Git備份到遠端codex/分支；核對git status、commit檔案清單及git ls-remote SHA，記錄回復位置，排除其他功能與個人USB資料。
-- [ ] 10.2 依賴10.1，以失敗測試實作 Topic-independent USB insertion prompting／插入即確認與精簡JSON 的掛載提示部分：檢查並修正controller通知、原生掛載／discover與post-frame／路由時序，使前景idle插入在未選主題、無set、載入中或錯誤時皆自動顯示一次確認，不等待主題tap、不自選酒精。以test/snp_chat_panel_test.dart及controller／必要Android tests驗證首次已有USB、refresh去重、busy後及路由返回處理、拔除與late清理、根目錄授權行為不變、不run／HTTP，來源掃描尚未完成不可冒充ready。
-- [ ] 10.3 接續10.2，以失敗測試實作 Compact API JSON presentation and visibility preference 及 Explicit bounded chat diagnostics：聊天室成功卡片只有有界可捲動API JSON、簡短完成與顯式複製，移除逐位點／posterior／debug全文；上方「顯示 API JSON」預設true、只保存boolean、載入前不展示正文且late偏好不覆蓋新切換，關閉使現在及後續正文／語意節點消失，重開頁沿用偏好不恢復結果、重新顯示不重算。上方顯式診斷視窗保留debug／分段計時、研究警示與複製，失效／登出／dispose關閉。以widget／controller tests驗證77位點JSON契約未改、debug off無報告、隱藏與busy只影響呈現、無HTTP／TTS／基因結果保存／自動clipboard。
-- [ ] 10.4 接續10.3更新docs/mobile-snp-genotyping.md的插入免主題操作、精簡JSON／隱藏偏好、主動查看診斷、備份SHA及實機狀態；執行全套Flutter tests／analyze、Android SNP／USB tests及ARM64 build，區分fake／fixture與Pixel真實掛載驗收。只在使用者要求時安裝，3.3真實USB計數／效能未驗證保持未完成。
+- [x] 10.1 在本組程式修改前，將目前已安裝USB確認版的相關dirty程式／tests／文件及本次四份規格限定Git備份到遠端codex/分支；核對git status、commit檔案清單及git ls-remote SHA，記錄回復位置，排除其他功能與個人USB資料。
+- [x] 10.2 依賴10.1，以失敗測試實作 Topic-independent USB insertion prompting／插入即確認與精簡JSON 的掛載提示部分：檢查並修正controller通知、原生掛載／discover與post-frame／路由時序，使前景idle插入在未選主題、無set、載入中或錯誤時皆自動顯示一次確認，不等待主題tap、不自選酒精。以test/snp_chat_panel_test.dart及controller／必要Android tests驗證首次已有USB、refresh去重、busy後及路由返回處理、拔除與late清理、根目錄授權行為不變、不run／HTTP，來源掃描尚未完成不可冒充ready。
+- [x] 10.3 接續10.2，以失敗測試實作 Compact API JSON presentation and visibility preference 及 Explicit bounded chat diagnostics：聊天室成功卡片只有有界可捲動API JSON、簡短完成與顯式複製，移除逐位點／posterior／debug全文；上方「顯示 API JSON」預設true、只保存boolean、載入前不展示正文且late偏好不覆蓋新切換，關閉使現在及後續正文／語意節點消失，重開頁沿用偏好不恢復結果、重新顯示不重算。上方顯式診斷視窗保留debug／分段計時、研究警示與複製，失效／登出／dispose關閉。以widget／controller tests驗證77位點JSON契約未改、debug off無報告、隱藏與busy只影響呈現、無HTTP／TTS／基因結果保存／自動clipboard。
+- [x] 10.4 接續10.3更新docs/mobile-snp-genotyping.md的插入免主題操作、精簡JSON／隱藏偏好、主動查看診斷、備份SHA及實機狀態；執行全套Flutter tests／analyze、Android SNP／USB tests及ARM64 build，區分fake／fixture與Pixel真實掛載驗收。只在使用者要求時安裝，3.3真實USB計數／效能未驗證保持未完成。
+
+## 11. USB結果接既有LLM
+
+- [ ] 11.1 修改本組APP程式前，将目前已安裝精簡JSON版的相關dirty程式／tests／文件與本次規格限定Git備份到遠端codex/分支；以git status、commit檔案清單及git ls-remote驗證SHA一致，排除其他功能及個人USB資料，記錄回復位置。
+- [ ] 11.2 依賴11.1，以失敗測試實作 Reuse existing LLM API for completed USB chat jobs／USB結果沿用既有LLM功能 的controller/API入口：重用ApiService.askLlm與既有response解析／cloud錯誤，僅接受完整USB snapshot，保留77/70/7與三份相同variants、user/query/topic及null yuguard，關閉傳輸debug，不BLE／mock／diagnostic上傳／結果保存。以fake API/controller測試核對呼叫參數、answer、錯誤及全部no-call空list契約。
+- [ ] 11.3 接續11.2，以widget失敗測試實作 Job-scoped USB LLM responses and explicit retry：送出捕捉GeneLLM flag，on在有效完成後去重恰一次request、off只離線；既有聊天室_Bubble呈現等待／answer／安全失敗與顯式retry。驗證JSONhide/show不重送、C與LLM busy禁止重送、retry同payload不重算，拔除／取消／來源／主題／logout／dispose使late成功與錯誤無效，舊finally不覆蓋新工作、無HTTP fallback／持久化／自動TTS；無USB普通sendUserMessage與原debug／JSON契約保持。
+- [ ] 11.4 接續11.3更新docs/mobile-snp-genotyping.md的GeneLLM開關／URL、送出到回覆、JSON隱藏仍送、失敗重試、已傳請求不能撤回及備份；執行Flutter全套tests／analyze與ARM64 build，區分mock與實際server驗證，不自動安裝，3.3保持未完成。

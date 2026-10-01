@@ -13,6 +13,16 @@ Non-Goals：手機內部 combined 資料、複製完整 USB 資料、FASTQ 建�
 
 ## Decisions
 
+### USB結果沿用既有LLM功能
+
+本節及對應Implementation Contract是最新優先契約，取代前LLM界線與禁止HTTP的舊聊天室描述；已完成task保持歷史記錄，獨立計算頁仍不送LLM。範圍內是USB結果銜接既有雲端API與暫存聊天回覆；範圍外是新server／HTTP client、BLE／mock重算、C模型／序列讀取變更、診斷上傳、基因資料持久化、自動TTS及背景重試。
+
+沿用`ChatController`的GeneLLM開關與`ApiService.askLlm`傳送／response解析，提供明確USB完成結果入口，不呼叫會再次啟動BLE或Local JSON的`sendUserMessage`。呼叫端只接受`SnpApiPayload.fromCompleted`產生的完整有效request，使用其user_id／query／topic／三份variants及原始位點／成功／no-call計數、yuguard；不能從目前snpList／聊天歷史覆蓋快照或將77個位點誤算成70個成功call。主題沿用現有中文契約與既有cloud正規化規則，不新增名稱映射。傳輸debug固定false，不把request／variants寫入原API debug檔或debug聊天泡泡。回覆解析與雲端錯誤處理重用現有功能，不將JSON或完整posterior當聊天answer。
+
+送出時固定GeneLLM啟用狀態及USB工作context。未開啟時只顯示離線JSON、不在完成後切開關自動傳送；開啟時完成事件自動發送一次。完成通知能重複，必須以resultJobId與generation去重並single-flight；原生runLoci回傳是啟動工作，不代表工作完成，不能立刻HTTP。C執行及LLM等待期間阻擋重複送出；上方JSON顯示可切換且不重算／重送。等待與answer／安全錯誤泡泡接在該暫存USB使用者訊息及JSON卡片後，沿用既有_Bubble渲染，不建立獨立聊天室、不持久化request／回覆。HTTP失敗不改成功的C結果，明示LLM失敗與「重試 LLM」；只有結果仍有效且GeneLLM開啟才可主動重試同一快照，不重跑C，不自動重送。
+
+取消、USB拔除／來源失效、主題切換、登出或dispose使generation失效並清空pending／answer／retry。HTTP已送出的資料無法撤回，現有ApiService沒有abort能力時只能忽略遲到response且不得顯示於其他主題／工作；文件必須明說此限制。新工作不能被舊finally清除busy。未授權、未確認、無set、部分／非法／取消結果不HTTP；無USB原sendUserMessage不變。空variants但77個完整no-call結果仍依現有askLlm契約傳空list，不能悄悄fallback一般SNP。
+
 ### 插入即確認與精簡JSON
 
 此節優先於下面已完成的聊天室結果明細展示契約。前景聊天室偵測mounted removable USB時，未選主題、主題無set、set載入中／失敗皆須彈出USB確認，不能等待主題選擇的setState才處理。先以controller／widget及Android事件流程檢查掛載通知、discover／scan、post-frame排程與路由就緒；修正實際造成延遲的環節，必要時使已確認掛載的volumes狀態先於來源掃描完成通知，避免大型USB掃描阻塞確認。不得用自動選酒精掩蓋問題，不新增背景輪詢服務；畫面返回前景須重新核對掛載狀態。已確認掛載、尚未找出pair時視窗顯示掃描／待來源，不冒充ready。保留同次掛載去重、關閉不重彈、圖示重開、busy延後到idle、拔除與late抑制，不在其他路由上強制彈窗；返回聊天室時仍掛載的新USB才處理。
@@ -108,6 +118,8 @@ asset 載入顯示 loading／ready／error 與 set 名稱、版本、筆數，�
 完整驗收路徑為：選酒精→asset驗證143筆→USB唯讀授權／pair選取→C SNP計數→獨立C genotyping→143列結果／no-call及debug階段时间。Widget／controller 測試用 fake platform 驗證傳入的143筆與實際asset相同、完成列數及set版本；native／JNI fixture 仍負責驗證核心計數及模型，不能用fake平台冒充實機USB。Pixel實測记录手機、set版本、USB來源、完成／錯誤、计時、取消與拔除；未知真實GT不當正確性證據，需用人工已知fixture或獨立核對。離線功能不送出 HTTP／LLM 呼叫；本次「整個流程」驗收界線是 LLM 之前，原本AI URL API不變。
 
 ## Implementation Contract
+
+- USB結果沿用既有LLM功能驗收：實作下面Reuse existing LLM API for completed USB chat jobs、Job-scoped USB LLM responses and explicit retry。先以fake ApiService/controller/widget失敗測試驗證GeneLLM off無HTTP、on在完整完成後恰一次/v1/ask、77/70/7計數／相同variantlists／快照context與null yuguard、不傳diagnostic／URI／序列。測試GeneLLM on/off在run中變更仍以送出快照為準，重複完成／JSON hide/show不重送、正在等待泡泡及busy、answer沿用_Bubble、不執行BLE／mock／自動TTS／持久化／API debuglog。HTTP錯誤與顯式retry保留C完成結果且不重算；拔除／來源／主題／登出／dispose後late成功與失敗不復活，舊finally不影響新請求。Fake成功不能宣稱實際server回應；執行Flutter全套tests／analyze及ARM64 build，文件記錄需GeneLLM on與URL可達、已送請求不可撤回、安裝另需使用者要求；3.3仍保留真實USB驗收。
 
 - 插入即確認與精簡JSON驗收：先寫失敗tests涵蓋「無USB→插入→不碰主題即一個AlertDialog」、首次已有USB／無set／pending asset／error及刷新去重、busy後處理、路由返回與拔除清理。成功77位點結果只見有界API JSON，不見逐位點／posterior／debug全文；上方切換隱藏使目前與下次JSON正文和語意節點消失、重開頁沿用boolean但不恢復結果、重新显示不增加run／HTTP／clipboard。明確查看診斷仍有分段時間、debug off無報告、失效關閉診斷。以`test/snp_chat_panel_test.dart`及controller／必要Android tests驗證，執行全套Flutter test／analyze、Android SNP／USB tests與ARM64 build；Pixel真實插入時序、SAF／USB效能另記錄，不以fake或建置當已完成3.3。
 - USB插入確認最新驗收：`test/snp_chat_panel_test.dart`及controller tests先失敗驗證插入／首次已掛載僅一個可關閉AlertDialog、refresh與授權返回不重彈、關閉不確認／不run／不HTTP、圖示可重開、拔除／dispose／logout清理及late不復活；確認來源後才能原composer送出，仍143參考→77位點／JSON，主題set與busy guard不變。原設定箭頭／debug仍在上方，確認視窗不取代聊天室。Android `SnpContractsTest.kt`與相關tests驗證root initial URI、primary拒絕、保存唯讀權限、目前選擇／同UUID有效記錄／唯一pair／多組未選恢復順序、被撤權與移除來源不恢復、scanner範圍與資源上限不放寬。首次根目錄仍需系統確認，私有儲存只新增來源metadata，禁止保存基因結果；fake／fixture／真實PixelUSB分開記錄。
