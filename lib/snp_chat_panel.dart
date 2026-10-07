@@ -261,7 +261,8 @@ class SnpChatControls extends StatelessWidget {
       required this.onShowApiJsonChanged,
       required this.onOpenDiagnostics,
       this.interactionLocked = false,
-      this.geneLlmEnabled = false});
+      this.geneLlmEnabled = false,
+      this.onGeneLlmChanged});
   final SnpComputeController controller;
   final SnpSet set;
   final List<SnpQuery>? queries;
@@ -270,6 +271,7 @@ class SnpChatControls extends StatelessWidget {
   final ValueChanged<bool> onShowApiJsonChanged;
   final VoidCallback onOpenDiagnostics;
   final bool interactionLocked, geneLlmEnabled;
+  final ValueChanged<bool>? onGeneLlmChanged;
   bool get _busy => controller.busy || interactionLocked;
   @override
   Widget build(BuildContext context) => Card(
@@ -277,6 +279,15 @@ class SnpChatControls extends StatelessWidget {
           padding: const EdgeInsets.all(12),
           child:
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            SwitchListTile(
+                key: const ValueKey('usb-gene-llm-switch'),
+                contentPadding: EdgeInsets.zero,
+                title: const Text('GeneLLM'),
+                subtitle: Text(geneLlmEnabled
+                    ? 'LLM ON：完成 USB 計算後送至既有 LLM 伺服器'
+                    : 'LLM OFF：僅離線計算，不傳送至 LLM'),
+                value: geneLlmEnabled,
+                onChanged: _busy ? null : onGeneLlmChanged),
             Text('${set.label} · USB 離線計算',
                 style: Theme.of(context).textTheme.titleMedium),
             if (!set.available)

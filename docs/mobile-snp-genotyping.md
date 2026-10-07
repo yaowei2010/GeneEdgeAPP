@@ -4,6 +4,8 @@
 
 ## 操作
 
+GeneLLM可直接在USB上方表單確認：插入USB後，點聊天室上方「開啟設定」（調整圖示）展開原下拉表單，最上方就是「GeneLLM」開關。副標題「LLM ON」代表完成USB計算後會送既有LLM，「LLM OFF」代表只離線計算；與左側選單GeneLLM on／off同步，沿用原ChatController偏好、不新增USB專用開關紀錄。C計算或等待LLM期間，這個表單開關暫時停用；JSON顯示仍可切換。單純展開或切換不開始運算、不HTTP，也不補送先前完成的离線JSON，只有下一次聊天送出才使用新的設定。
+
 1. 在前景聊天室插入 USB（或開聊天室時已有 USB），自動顯示「USB 使用確認」，不必點選酒精或切換主題，也不等待SNP set／來源掃描完成；掃描中會顯示「USB 來源掃描中」且不可確認計算。其他頁面或APP非前景時不強制彈窗，返回前景聊天室且idle才處理仍掛載的新USB。可用關閉、取消、返回或點外部關閉，同次插入不反覆彈出；關閉後仍顯示上方 USB 圖示，但不能送出 USB 計算。點圖示可重開；點「使用此 USB」只確認來源，插入、授權、確認都不開始計算。
 2. 確認頁預設位置是「USB 根目錄」。已有有效唯讀授權先沿用；首次或需要擴大範圍時按「授權 USB 根目錄」，系統選擇器預選該 USB 最外層，仍須親自確認授權，APP 不代按。若 provider 限制根目錄，依實際允許資料夾授權；舊子資料夾權限會明示「子資料夾」，不冒充根目錄。只讀掛載 removable UUID，不讀手機 primary。授權範圍內搜尋同目錄精確雙檔 combined_idx_all.txt 與 combined_ids_all.txt，維持深度16／10000項限制。保存唯讀grant與來源URI metadata，不保存基因資料；重新插入恢復同USB仍有效的來源，否則只有唯一pair才自選，多USB／多組未選不猜。
 3. 滑鼠停留或手機長按 USB 圖示，提示可讀資料夾名稱與狀態，不顯示ID／SAF URI。未確認顯示「USB 待確認」，確認且set ready才顯示綠色「USB 已就緒」。原設定箭頭仍展開上方set／來源／debug，內容可捲動且鍵盤開啟高度受限。選「酒精」自動带入143筆參考／77位點、版本alcohol-set143-k150-v1；USB未確認、未授權、多組未選、無set或載入失敗時送出不可用，不改走BLE／Local JSON／雲端。拔除、來源變更或登出清除使用確認，授權晚到不能恢復已拔除來源；沒有USB時原聊天路徑不變。
@@ -93,6 +95,12 @@ GT輸出0/0、0/1、1/1；零深度、低深度、最高posterior低於門檻或
 - 舊版僅產生本機JSON；本次新增GeneLLM ON的完成後傳輸及聊天室response。自動化fake API與mock HTTP不代表實際LLM server或Pixel整條流程已驗收。
 - 2026-10-01最新「插入即確認／精簡JSON」版：測試先行重現掃描中未通知掛載／其他路由返回漏提示／非前景彈窗、掃描中仍可確認與拔除後late掃描回覆，以及舊位點明細仍佔位。新增先通知volumes再掃描、獨立於主題／set的排程與返回前景處理；新增JSON隱藏boolean、late偏好保護、正文／語意移除、下次工作與重開頁偏好，以及主動診斷／取消／拔除／主題／登出／dispose回歸。Flutter全套102項通過、flutter analyze無問題、Android SNP19項／USB10項通過，ARM64 debug APK建置成功（build/app/outputs/flutter-apk/app-debug.apk）；未修改C模型／API serializer。已以adb install -r更新至Pixel 10 Pro（61210DLCH001H5），回傳Success，保留既有APP資料；MainActivity冷啟動Status: ok，確認程序執行中（PID 23071）。這些測試與安裝確認不等同Pixel真實掛載或SAF定位、計數／效能驗收，3.3保持未完成。
 ## USB → LLM 串接備份
+
+2026-10-01 後續表單版安裝：依使用者要求，以adb install -r將含USB上方GeneLLM開關的ARM64 debug APK更新至Pixel 10 Pro（61210DLCH001H5），回傳Success且保留原APP資料；MainActivity啟動Status: ok，確認程序執行中（PID 25084）。此紀錄更新下方建置時「尚未安裝此版」狀態；不代表真實USB／LLM server流程已驗收，3.3仍未完成。
+
+2026-10-01 USB表單GeneLLM版驗證：先以widget失敗測試確認表單尚無開關，再新增沿用controller setter的頂端SwitchListTile。新增4項測試驗證兩入口同步／原偏好恢復、開關不計算或HTTP／不補送舊JSON、下一次送出傳送、C／LLM busy禁用且JSON顯示獨立、鍵盤開啟有界及缺callback禁用。Flutter全套132項通過、flutter analyze無問題，ARM64 debug APK建置成功（build/app/outputs/flutter-apk/app-debug.apk）；git diff --check與Spectra validate通過，規格分析無Warning／Critical。未改C／Android或LLM契約，尚未安裝此版Pixel；mock／widget不等於實機USB／server驗收，3.3保持未完成。
+
+2026-10-01 USB表單GeneLLM開關修改前，已將目前Pixel已安裝LLM版及追加規格限定10個相關檔案備份至遠端 `codex/backup-before-usb-llm-toggle-20261001`；commit `88574070381e96b621ba7df70de2590bcec34c79`與git ls-remote一致，未包含其他功能與個人USB資料。
 
 2026-10-01 後續安裝：依使用者要求，將USB接既有LLM版ARM64 debug APK以adb install -r更新至Pixel 10 Pro（61210DLCH001H5），回傳Success並保留原APP資料；MainActivity啟動Status: ok，確認程序執行中（PID 23907）。這僅確認安裝／啟動，尚未驗收手機真實USB→實際LLM server→聊天回覆，3.3保持未完成。
 

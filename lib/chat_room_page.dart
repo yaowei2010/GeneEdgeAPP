@@ -881,6 +881,7 @@ class _ChatRoomPageState extends State<ChatRoomPage>
                                 controller: _snp,
                                 interactionLocked: _usbLlmBusy,
                                 geneLlmEnabled: c.geneLlmEnabled,
+                                onGeneLlmChanged: c.setGeneLlmEnabled,
                                 set: _snpSet,
                                 queries: _snpQueries,
                                 error: _snpError,

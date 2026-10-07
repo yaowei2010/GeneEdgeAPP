@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geneapp/chat_controller.dart';
@@ -6,6 +7,7 @@ import 'package:geneapp/chat_room_page.dart';
 import 'package:geneapp/models.dart';
 import 'package:geneapp/snp_compute.dart';
 import 'package:geneapp/snp_sets.dart';
+import 'package:geneapp/snp_chat_panel.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'snp_chat_panel_test.dart' show ChatUsbPlatform;
@@ -69,6 +71,120 @@ void main() {
     chat.dispose();
   }
 
+  testWidgets(
+      'upper USB GeneLLM shares drawer state and original preference without running',
+      (tester) async {
+    chat.geneLlmEnabled = false;
+    await mount(tester);
+    await tester.tap(find.byTooltip('開啟設定'));
+    await tester.pumpAndSettle();
+    final control = find.byKey(const ValueKey('usb-gene-llm-switch'));
+    expect(control, findsOneWidget);
+    expect(tester.widget<SwitchListTile>(control).value, false);
+    expect(find.textContaining('LLM OFF：'), findsOneWidget);
+    await tester.tap(control);
+    await tester.pumpAndSettle();
+    expect(chat.geneLlmEnabled, true);
+    expect(find.textContaining('LLM ON：'), findsOneWidget);
+    expect(p.runCalls, 0);
+    expect(api.requests, isEmpty);
+    await tester.tap(find.byTooltip('開啟選單'));
+    await tester.pumpAndSettle();
+    expect(find.text('GeneLLM on'), findsOneWidget);
+    await tester.tap(find.text('GeneLLM on'));
+    await tester.pumpAndSettle();
+    expect(find.text('GeneLLM off'), findsOneWidget);
+    final scaffold = tester.state<ScaffoldState>(find.byType(Scaffold).first);
+    scaffold.closeDrawer();
+    await tester.pumpAndSettle();
+    expect(tester.widget<SwitchListTile>(control).value, false);
+    final prefs = await SharedPreferences.getInstance();
+    final saved = jsonDecode(prefs.getString('chat_thread_usb-llm')!) as Map;
+    expect(saved['gene_llm_enabled'], false);
+    final restored = ChatController(api: api, threadId: 'usb-llm');
+    await restored.load();
+    expect(restored.geneLlmEnabled, false);
+    restored.dispose();
+    expect(prefs.getKeys(), {'chat_thread_usb-llm', 'snp_chat_show_api_json'});
+    expect(p.runCalls, 0);
+    expect(api.requests, isEmpty);
+    await tester.tap(control);
+    await tester.pumpAndSettle();
+    await send(tester);
+    expect(tester.widget<SwitchListTile>(control).onChanged, isNull);
+    await complete(tester);
+    expect(api.requests.length, 1);
+    expect(tester.widget<SwitchListTile>(control).onChanged, isNull);
+    api.answer(0, '開關測試回覆');
+    await tester.pumpAndSettle();
+    expect(tester.widget<SwitchListTile>(control).onChanged, isNotNull);
+    await dispose(tester);
+  });
+  testWidgets(
+      'enabling upper USB GeneLLM never retroactively sends completed offline JSON',
+      (tester) async {
+    chat.geneLlmEnabled = false;
+    await mount(tester);
+    await send(tester);
+    await complete(tester);
+    await tester.tap(find.byTooltip('開啟設定'));
+    await tester.pumpAndSettle();
+    final control = find.byKey(const ValueKey('usb-gene-llm-switch'));
+    expect(control, findsOneWidget);
+    await tester.tap(control);
+    await tester.pumpAndSettle();
+    expect(chat.geneLlmEnabled, true);
+    expect(api.requests, isEmpty);
+    expect(p.runCalls, 1);
+    expect(snp.status, 'completed');
+    await dispose(tester);
+  });
+  testWidgets(
+      'USB form GeneLLM remains bounded with keyboard and busy JSON switch is independent',
+      (tester) async {
+    await mount(tester);
+    tester.view.viewInsets = const FakeViewPadding(bottom: 240);
+    addTearDown(tester.view.resetViewInsets);
+    await tester.tap(find.byTooltip('開啟設定'));
+    await tester.pumpAndSettle();
+    final control = find.byKey(const ValueKey('usb-gene-llm-switch'));
+    expect(control, findsOneWidget);
+    expect(control.hitTestable(), findsOneWidget);
+    await send(tester);
+    expect(tester.widget<SwitchListTile>(control).onChanged, isNull);
+    expect(
+        tester
+            .widget<SwitchListTile>(
+                find.widgetWithText(SwitchListTile, '顯示 API JSON'))
+            .onChanged,
+        isNotNull);
+    await complete(tester);
+    expect(tester.widget<SwitchListTile>(control).onChanged, isNull);
+    expect(tester.takeException(), isNull);
+    api.answer(0, 'bounded reply');
+    await tester.pumpAndSettle();
+    await dispose(tester);
+  });
+  testWidgets('GeneLLM switch without actionable callback is disabled',
+      (tester) async {
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: SingleChildScrollView(
+                child: SnpChatControls(
+                    controller: snp,
+                    set: SnpSets.alcohol,
+                    queries: queries,
+                    error: null,
+                    showApiJson: false,
+                    onShowApiJsonChanged: (_) {},
+                    onOpenDiagnostics: () {},
+                    geneLlmEnabled: true)))));
+    final control = find.byKey(const ValueKey('usb-gene-llm-switch'));
+    expect(control, findsOneWidget);
+    expect(tester.widget<SwitchListTile>(control).value, true);
+    expect(tester.widget<SwitchListTile>(control).onChanged, isNull);
+    await dispose(tester);
+  });
   testWidgets(
       'enabled snapshot survives toggle off; visibility changes never resend or hide answer',
       (tester) async {

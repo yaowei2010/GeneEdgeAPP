@@ -75,6 +75,9 @@
 
 ## 12. USB表單GeneLLM入口
 
-- [ ] 12.1 修改表單前將目前已安裝USB接LLM版相關dirty程式／tests／docs與本次規格限定Git備份至遠端codex/分支，核對commit檔案清單及git ls-remote SHA一致，排除其他功能與個人USB資料，記錄回復位置。
-- [ ] 12.2 依賴12.1，以widget失敗測試實作 Upper USB form shares the existing GeneLLM control／USB表單GeneLLM共用開關：在原USB上方表單頂端顯示共用SwitchListTile與LLM ON／OFF／流程說明，直接傳既有controller value及setter、保留側欄同步與原偏好，不新增另一flag；C／LLM忙碌及無callback禁用，JSON顯示仍獨立。測試雙入口同步、idle切換與偏好、切換不run／HTTP／補送旧JSON、下一次送出快照、busy禁用及鍵盤有界無overflow。
-- [ ] 12.3 接續12.2更新docs/mobile-snp-genotyping.md的上方USB表單GeneLLM位置、ON／OFF／busy與側欄同步及備份；執行Flutter全套tests／analyze與ARM64 build、git diff --check及Spectra validate，區分mock與真實手機驗收，不自動安裝且3.3保持未完成。
+- [x] 12.1 修改表單前將目前已安裝USB接LLM版相關dirty程式／tests／docs與本次規格限定Git備份至遠端codex/分支，核對commit檔案清單及git ls-remote SHA一致，排除其他功能與個人USB資料，記錄回復位置。
+- [x] 12.2 依賴12.1，以widget失敗測試實作 Upper USB form shares the existing GeneLLM control／USB表單GeneLLM共用開關：在原USB上方表單頂端顯示共用SwitchListTile與LLM ON／OFF／流程說明，直接傳既有controller value及setter、保留側欄同步與原偏好，不新增另一flag；C／LLM忙碌及無callback禁用，JSON顯示仍獨立。測試雙入口同步、idle切換與偏好、切換不run／HTTP／補送旧JSON、下一次送出快照、busy禁用及鍵盤有界無overflow。
+- [x] 12.3 接續12.2更新docs/mobile-snp-genotyping.md的上方USB表單GeneLLM位置、ON／OFF／busy與側欄同步及備份；執行Flutter全套tests／analyze與ARM64 build、git diff --check及Spectra validate，區分mock與真實手機驗收，不自動安裝且3.3保持未完成。
+## 13. Kotlin 流程註解
+
+- [x] 13.1 在 SnpComputePlugin.kt 補中文職責、USB 授權與搜尋、JNI／唯讀 FD、工作取消／過期結果及 debug 計時邊界註解；不改程式行為。以註解內容檢查、移除註解後與修改前 Git 版本逐字比較及 git diff --check 驗證，保留3.3未完成。
